@@ -1,17 +1,35 @@
-Getting started
-===============
+Tutorial: getting started
+============================
 
-In this tutorial you will install ``tmdl-preflight``, check a clean
-semantic model, check a deliberately broken copy of the same model,
-repair the blockers with the auto-fixer, and learn to read the one
-advisory finding that remains. It takes about ten minutes and assumes
-nothing beyond a working Python 3.10 or later installation.
+In this tutorial you open a broken semantic model, watch it fail in
+Power BI Desktop, then use ``tmdl-preflight`` to find and repair every
+blocker until it opens clean. It takes about ten minutes and assumes a
+working Python 3.10 or later installation. Opening the model yourself,
+steps 1 and 6, needs Power BI Desktop, which needs Windows; every
+other step runs on whatever platform runs Python, since the CLI reads
+and writes plain TMDL text files directly.
 
-1. Install
+1. Open the broken model, and watch it fail
+-------------------------------------------------
+
+The repository ships two copies of a small fictional PBIP project, the
+Pedal and Sprocket Bike Co. model, under ``examples/``:
+``bike-shop-clean`` (every rule passes) and ``bike-shop-broken`` (the
+same model, seeded with defects). Open
+``examples/bike-shop-broken/BikeShop.pbip`` in Power BI Desktop.
+
+It does not open. One of the seeded defects, a table missing its ``ref
+table`` line in ``model.tmdl``, is exactly the kind of thing that sails
+past a code review, since nothing in a diff looks wrong, but stops
+Power BI Desktop cold. The error Desktop shows is generic; it does not
+name the file, the table, or the fix. That is the gap
+``tmdl-preflight`` closes.
+
+2. Install
 -------------
 
-From a clone of this repository (the ``[test]`` extra pulls in
-pytest, which you will want for the later steps anyway):
+From a clone of this repository (the ``[test]`` extra pulls in pytest,
+which the how-to guides also use):
 
 ::
 
@@ -19,40 +37,12 @@ pytest, which you will want for the later steps anyway):
     $ tmdl-preflight --version
     tmdl-preflight 0.1.0
 
-2. Meet the example models
-------------------------------
-
-The repository ships two copies of a small fictional PBIP project, the
-Pedal and Sprocket Bike Co. model, under ``examples/``:
-
-::
-
-    examples/
-    |-- bike-shop-clean/            # every rule passes; opens in Power BI
-    |   |-- BikeShop.SemanticModel/
-    |   |   `-- definition/
-    |   |       |-- model.tmdl
-    |   |       |-- relationships.tmdl
-    |   |       `-- tables/
-    |   |           |-- __Calendar.tmdl
-    |   |           |-- Metric Selector.tmdl
-    |   |           |-- Products.tmdl
-    |   |           |-- Sales Measures.tmdl
-    |   |           |-- Sales.tmdl
-    |   |           `-- Stores.tmdl
-    |   `-- BikeShop.Report/
-    `-- bike-shop-broken/           # same model, 4 blockers + 1 style nudge
-
-This is exactly the folder shape Power BI Desktop produces when you
-save a project as PBIP (File, then Save as, then Power BI project
-files), so everything below works the same on your own models.
-
 3. Check the clean model
 ----------------------------
 
-Point ``check`` at the project root (it also accepts a
-``*.SemanticModel`` folder, a ``definition`` folder, or a ``*.Report``
-folder):
+``check`` is strictly read-only; point it at a project root, a
+``*.SemanticModel`` folder, a ``definition`` folder, or a
+``*.Report`` folder:
 
 ::
 
@@ -60,52 +50,48 @@ folder):
 
     tmdl-preflight: 0 error(s), 0 warning(s), 0 info(s)
 
-Exit code 0: the model is clean and opens in Power BI Desktop.
-``check`` is strictly read-only; it never touches your files.
+Exit code 0: every rule passes, and the model opens in Power BI
+Desktop without incident.
 
 4. Check the broken model
 -----------------------------
 
-``bike-shop-broken`` is the same project after a bad week: a table
-lost its ``ref table`` line, a table file was copy-pasted, a lineage
-tag was hand-typed as a placeholder, and a field-parameter row was
-deleted without its comma. The result will not open in Power BI
-Desktop. Four of those defects are blockers Power BI rejects on open;
-the fifth is a style nudge. The examples README lists exactly what is
-seeded where; here is what ``check`` makes of it:
-
 ::
 
     $ tmdl-preflight check examples/bike-shop-broken
-    BikeShop.SemanticModel\definition\tables\Metric Selector.tmdl:45  F001 error: stray comma run (1 orphan comma(s)) in calculated partition source [Metric Selector (partition source)] (auto-fixable)
-    BikeShop.SemanticModel\definition\tables\Sales Measures.tmdl:17  S001 info: visible measure has no formatString, so it renders with the engine's default formatting. Add a formatString, or run with --ignore S001 if your formatting strategy lives elsewhere. [Sales Measures[Units Sold]]
-    BikeShop.SemanticModel\definition\tables\Stores.tmdl  M006 error: table 'Stores' is defined in tables/ but has no 'ref table' line in model.tmdl, so it is not part of the model and Power BI will not open the project. Add: ref table Stores [Stores] (auto-fixable)
-    BikeShop.SemanticModel\definition\tables\Stores.tmdl:3  M003 error: lineageTag 'e689596a-59ea-4b2c-a14d-48596a7b8c9d' duplicates the one on table Products (Products.tmdl:3) [table Stores] (auto-fixable)
-    BikeShop.SemanticModel\definition\tables\__Calendar.tmdl:4  M004 warning: lineageTag 'calendar-tag-TODO' is not a canonical UUID [table __Calendar] (auto-fixable)
+    BikeShop.SemanticModel/definition/tables/Metric Selector.tmdl:45  F001 error: stray comma run (1 orphan comma(s)) in calculated partition source [Metric Selector (partition source)] (auto-fixable)
+    BikeShop.SemanticModel/definition/tables/Sales Measures.tmdl:17  S001 info: visible measure has no formatString, so it renders with the engine's default formatting. Add a formatString, or run with --ignore S001 if your formatting strategy lives elsewhere. [Sales Measures[Units Sold]]
+    BikeShop.SemanticModel/definition/tables/Stores.tmdl  M006 error: table 'Stores' is defined in tables/ but has no 'ref table' line in model.tmdl, so it is not part of the model and Power BI will not open the project. Add: ref table Stores [Stores] (auto-fixable)
+    BikeShop.SemanticModel/definition/tables/Stores.tmdl:3  M003 error: lineageTag 'e689596a-59ea-4b2c-a14d-48596a7b8c9d' duplicates the one on table Products (Products.tmdl:3) [table Stores] (auto-fixable)
+    BikeShop.SemanticModel/definition/tables/__Calendar.tmdl:4  M004 warning: lineageTag 'calendar-tag-TODO' is not a canonical UUID [table __Calendar] (auto-fixable)
 
     tmdl-preflight: 3 error(s), 1 warning(s), 1 info(s)
 
-Exit code 1. Every line names the file (and line where one exists),
-the rule id, the severity, what is wrong, and, where the tool can
-repair it, the ``(auto-fixable)`` marker:
+Exit code 1. Every line names the file, the line where one exists, the
+rule id, the severity, and what is wrong; where the tool can repair it,
+an ``(auto-fixable)`` marker:
 
-- M006 (``Stores`` has no ``ref table`` line): the table is not
-  attached to the model, so Power BI refuses to open the project.
-- M003 (``Stores`` copied ``Products``' ``lineageTag``): the deploy
-  target rejects duplicate lineage tags.
-- M004 (``__Calendar``'s ``lineageTag`` is a ``TODO`` placeholder, not
-  a UUID).
-- F001 (a deleted field-parameter row left an orphan comma): the
-  calculated partition source no longer parses.
-- S001 (the visible measure ``Units Sold`` has no ``formatString``):
-  an advisory nudge, not a blocker; the model opens fine without it.
+- **M006**, the exact defect that stopped Desktop from opening the
+  project: ``Stores`` is defined under ``tables/`` but has no ``ref
+  table`` line, so it is not attached to the model.
+- **M003**: ``Stores`` copied ``Products``' ``lineageTag``. A duplicate
+  like this is often the one that survives review and Desktop, then
+  fails a deployment days later; here it also compounds the open
+  failure.
+- **M004**: ``__Calendar``'s ``lineageTag`` is a ``TODO`` placeholder,
+  not a UUID.
+- **F001**: a deleted field-parameter row left an orphan comma behind,
+  so the calculated partition source no longer parses.
+- **S001**: the visible measure ``Units Sold`` has no ``formatString``.
+  An advisory nudge, not a blocker; it does not stop the model from
+  opening.
 
 Four findings carry the ``(auto-fixable)`` marker; S001 does not. That
-split is the whole design: a defect earns an auto-fix only when the
-failure itself fully determines the repair.
+split is deliberate: a defect earns an auto-fix only when the failure
+itself fully determines the repair.
 
 5. Fix a copy
------------------
+----------------
 
 ``fix`` edits files in place, so work on a copy and keep the broken
 original for rereading this tutorial:
@@ -115,82 +101,67 @@ original for rereading this tutorial:
     $ cp -r examples/bike-shop-broken /tmp/bike-shop
     $ tmdl-preflight fix /tmp/bike-shop
     fixed  M006: model.tmdl: + ref table Stores
-    fixed  M003: Stores.tmdl:3 (table Stores): 'e689596a-59ea-4b2c-a14d-48596a7b8c9d' -> '1556d6dd-6012-4be4-8d04-6383081d6e02'
-    fixed  M004: __Calendar.tmdl:4 (table __Calendar): 'calendar-tag-TODO' -> '1e41940d-23a7-4d0f-b260-4c40ecdd16fa'
+    fixed  M003: Stores.tmdl:3 (table Stores): 'e689596a-59ea-4b2c-a14d-48596a7b8c9d' -> '14946e6f-ad2f-4520-97f8-ade96bc6adeb'
+    fixed  M004: __Calendar.tmdl:4 (table __Calendar): 'calendar-tag-TODO' -> 'a3461075-352b-454c-9469-c584419c2b3e'
     fixed  F001: Metric Selector.tmdl: removed 1 orphan comma(s) from 'Metric Selector' partition source
 
-    BikeShop.SemanticModel\definition\tables\Sales Measures.tmdl:17  S001 info: visible measure has no formatString, so it renders with the engine's default formatting. Add a formatString, or run with --ignore S001 if your formatting strategy lives elsewhere. [Sales Measures[Units Sold]]
+    BikeShop.SemanticModel/definition/tables/Sales Measures.tmdl:17  S001 info: visible measure has no formatString, so it renders with the engine's default formatting. Add a formatString, or run with --ignore S001 if your formatting strategy lives elsewhere. [Sales Measures[Units Sold]]
 
     tmdl-preflight: 0 error(s), 0 warning(s), 1 info(s), 4 fix(es) applied
 
-The regenerated UUIDs are random, so yours will differ. Three things
-happened, in order:
+(The regenerated UUIDs are random; yours will differ.) Three things
+happened, in order: every rule ran (``check``); the fixers of the
+rules that failed ran, editing files on disk; then every rule ran
+**again**, from disk, and the report above is that re-check. Exit code
+0 because the re-check came back clean of blockers, not because fixers
+ran. Diff the copy against ``examples/bike-shop-broken`` before moving
+on: every auto-fix is a one-line, or one-value, change.
 
-#. every rule ran (``check``),
-#. the fixers of the failed auto-fixable rules ran: the missing
-   ``ref table Stores`` line was appended to ``model.tmdl``, the
-   duplicate lineage tag was regenerated (the original in
-   ``Products.tmdl`` was left alone), the placeholder tag became a
-   real UUID, and the orphan comma was deleted,
-#. every rule ran again, from disk, and the report you see is that
-   re-check.
+6. Open the repaired copy
+-----------------------------
 
-Exit code 0, because the re-check came back clean of blockers, not
-because fixers ran. The four blockers are gone and the project now
-opens in Power BI Desktop. Only the S001 info line remains, and info
-never blocks. That check, fix, re-check loop is the imposition
-pattern; see :doc:`../explanation/imposition-pattern` for why the
-re-check is not optional. Running ``fix`` a second time applies zero
-fixes and reports the same single info line; the fixers are
-idempotent.
+Open ``/tmp/bike-shop/BikeShop.pbip`` in Power BI Desktop. It opens
+clean: ``Stores`` is present, the calendar and duplicate lineage tags
+are resolved, and the ``Metric Selector`` field parameter loads without
+a parse error. Nothing was guessed on your behalf; every change above
+is one you can read in a two-line diff.
 
-Diff the copy against ``examples/bike-shop-broken`` before you move
-on: every auto-fix is a one-line (or one-value) change, so the review
-is trivial.
-
-6. Read what remains
+7. Read what remains
 ------------------------
-
-Re-run ``check`` on the repaired copy:
 
 ::
 
     $ tmdl-preflight check /tmp/bike-shop
-    BikeShop.SemanticModel\definition\tables\Sales Measures.tmdl:17  S001 info: visible measure has no formatString, so it renders with the engine's default formatting. Add a formatString, or run with --ignore S001 if your formatting strategy lives elsewhere. [Sales Measures[Units Sold]]
+    BikeShop.SemanticModel/definition/tables/Sales Measures.tmdl:17  S001 info: visible measure has no formatString, so it renders with the engine's default formatting. Add a formatString, or run with --ignore S001 if your formatting strategy lives elsewhere. [Sales Measures[Units Sold]]
 
     tmdl-preflight: 0 error(s), 0 warning(s), 1 info(s)
 
-Exit code 0. One finding stays, and it stays on purpose: S001 is an
-info-level nudge, not a defect that stops the model from opening. The
-message tells you the problem and your options, but the choice is
-yours; give ``Units Sold`` a ``formatString`` if you format measures on
-the model, or run with ``--ignore S001`` if your formatting strategy
-lives elsewhere (a calculation group, a theme). A tool that forced one
-answer would be imposing a house style, not repairing a break. Add a
-``formatString`` yourself and re-run ``check`` to see the same
-all-clear the clean model shows:
+Exit code 0. S001 stays on purpose: it is an ``info``-level nudge, not
+a defect that stops the model from opening, and the choice of how to
+format ``Units Sold`` is yours. Give it a ``formatString`` if you
+format measures on the model itself, or run with ``--ignore S001`` if
+your formatting strategy lives elsewhere (a calculation group, a
+theme).
+
+8. Explore further
+----------------------
+
+The full rule catalog, one rule in isolation, machine-readable output,
+and a stricter exit code:
 
 ::
 
-    $ tmdl-preflight check examples/bike-shop-clean
-
-    tmdl-preflight: 0 error(s), 0 warning(s), 0 info(s)
-
-7. Explore the rest
-------------------------
-
-::
-
-    $ tmdl-preflight rules                                            # the full catalog
-    $ tmdl-preflight check examples/bike-shop-broken --select M006    # one rule only
-    $ tmdl-preflight check examples/bike-shop-broken --json           # machine-readable
-    $ tmdl-preflight check examples/bike-shop-broken --strict         # warnings fail too
+    $ tmdl-preflight rules
+    $ tmdl-preflight check examples/bike-shop-broken --select M006
+    $ tmdl-preflight check examples/bike-shop-broken --json
+    $ tmdl-preflight check examples/bike-shop-broken --strict
 
 Where to go next
 --------------------
 
-- Wire it into your pipeline: :doc:`../how-to/run-in-ci`.
-- Use it from your test suite: :doc:`../how-to/run-in-pytest`.
-- Understand what each rule protects you from: the explanation guides
-  linked from :doc:`../index`.
-- Everything the CLI accepts: :doc:`../reference/cli`.
+- Add a rule of your own: :doc:`../how-to/modify-the-rules-list`
+- Add or change an auto-fix: :doc:`../how-to/modify-the-auto-fixes`
+- Every CLI flag, exit code, and output format:
+  :doc:`../reference/usage`
+- The pytest fixture, the Python API, and the design behind the
+  check → fix → re-check loop: :doc:`../reference/customization`
