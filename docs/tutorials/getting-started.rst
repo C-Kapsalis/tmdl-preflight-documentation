@@ -21,20 +21,30 @@ same model, seeded with defects). Open
 It does not open. One of the seeded defects, a table missing its ``ref
 table`` line in ``model.tmdl``, is exactly the kind of thing that sails
 past a code review, since nothing in a diff looks wrong, but stops
-Power BI Desktop cold. The error Desktop shows is generic; it does not
-name the file, the table, or the fix. That is the gap
-``tmdl-preflight`` closes.
+Power BI Desktop cold. The error Desktop shows is generic, and in some
+cases there is no error at all: the file just hangs on load and the
+report never opens. Either way, nothing names the file, the table, or
+the fix. That is the gap ``tmdl-preflight`` closes.
 
 2. Install
 -------------
 
 From a clone of this repository (the ``[test]`` extra pulls in pytest,
-which the how-to guides also use):
+which the how-to guides also use), install the package in editable
+mode:
 
 ::
 
     $ pip install -e ".[test]"
+
+Confirm the console command is on the path:
+
+::
+
     $ tmdl-preflight --version
+
+::
+
     tmdl-preflight 0.1.0
 
 3. Check the clean model
@@ -48,6 +58,10 @@ which the how-to guides also use):
 
     $ tmdl-preflight check examples/bike-shop-clean
 
+Every rule passes:
+
+::
+
     tmdl-preflight: 0 error(s), 0 warning(s), 0 info(s)
 
 Exit code 0: every rule passes, and the model opens in Power BI
@@ -59,6 +73,11 @@ Desktop without incident.
 ::
 
     $ tmdl-preflight check examples/bike-shop-broken
+
+Five findings come back:
+
+::
+
     BikeShop.SemanticModel/definition/tables/Metric Selector.tmdl:45  F001 error: stray comma run (1 orphan comma(s)) in calculated partition source [Metric Selector (partition source)] (auto-fixable)
     BikeShop.SemanticModel/definition/tables/Sales Measures.tmdl:17  S001 info: visible measure has no formatString, so it renders with the engine's default formatting. Add a formatString, or run with --ignore S001 if your formatting strategy lives elsewhere. [Sales Measures[Units Sold]]
     BikeShop.SemanticModel/definition/tables/Stores.tmdl  M006 error: table 'Stores' is defined in tables/ but has no 'ref table' line in model.tmdl, so it is not part of the model and Power BI will not open the project. Add: ref table Stores [Stores] (auto-fixable)
@@ -100,6 +119,11 @@ original for rereading this tutorial:
 
     $ cp -r examples/bike-shop-broken /tmp/bike-shop
     $ tmdl-preflight fix /tmp/bike-shop
+
+Four fixers run, then the re-check reports what remains:
+
+::
+
     fixed  M006: model.tmdl: + ref table Stores
     fixed  M003: Stores.tmdl:3 (table Stores): 'e689596a-59ea-4b2c-a14d-48596a7b8c9d' -> '14946e6f-ad2f-4520-97f8-ade96bc6adeb'
     fixed  M004: __Calendar.tmdl:4 (table __Calendar): 'calendar-tag-TODO' -> 'a3461075-352b-454c-9469-c584419c2b3e'
@@ -132,6 +156,11 @@ is one you can read in a two-line diff.
 ::
 
     $ tmdl-preflight check /tmp/bike-shop
+
+One finding remains:
+
+::
+
     BikeShop.SemanticModel/definition/tables/Sales Measures.tmdl:17  S001 info: visible measure has no formatString, so it renders with the engine's default formatting. Add a formatString, or run with --ignore S001 if your formatting strategy lives elsewhere. [Sales Measures[Units Sold]]
 
     tmdl-preflight: 0 error(s), 0 warning(s), 1 info(s)

@@ -8,6 +8,14 @@ the built-in rules use. There is no plugin or entry-point discovery
 mechanism for this; a custom rule is added in code, in your own fork or
 a wrapper script.
 
+You will need working familiarity with Python and, for the pytest
+route, with the pytest library itself, plus enough familiarity with
+Power BI data models saved as PBIP/TMDL to know what a rule should be
+looking at. This page assumes both; it does not teach either. The
+concepts here, ``Context``, ``Rule``, ``RuleSet``, and how a rule is
+evaluated, are covered in full in :doc:`../reference/customization`,
+worth reading first if any of this feels underspecified.
+
 1. Subclass ``Rule``
 ------------------------
 

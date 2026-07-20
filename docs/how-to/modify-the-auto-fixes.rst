@@ -6,6 +6,14 @@ five built-in fixers does. Only five of the twenty-one rules ship a
 fixer, and that is deliberate; read the safety contract below before
 writing one.
 
+You will need working familiarity with Python and, for the pytest
+route, with the pytest library itself, plus enough familiarity with
+Power BI data models saved as PBIP/TMDL to judge what a fixer is
+allowed to touch. This page assumes both; it does not teach either.
+The imposition pattern and the full reasoning behind the safety
+contract below are covered in :doc:`../reference/customization`, worth
+reading first if any of this feels underspecified.
+
 Where the built-in fixers live
 -----------------------------------
 

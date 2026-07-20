@@ -77,6 +77,12 @@ of them call. Nothing here has flags or exit codes, only calls and
 return values, and it is what building or running a custom
 :doc:`../how-to/modify-the-rules-list` rests on.
 
+The classes below appear in the order a run actually evaluates them: a
+``Context`` is built from a path, a ``RuleSet`` of ``Rule`` instances
+(each carrying a ``Severity``) is chosen, ``check()`` or ``fix()``
+runs it against the context, and the result comes back as a
+``PreflightReport`` full of ``Violation`` objects.
+
 ``Context``
 ~~~~~~~~~~~~~~~
 
@@ -92,10 +98,122 @@ a ``*.SemanticModel`` folder, a ``definition`` folder, or a
 ``ctx.models`` parses every discovered ``definition/`` folder and
 caches the result.
 
-- ``ctx.reload()``: drops the parse cache. Call this after fixers have
-  rewritten files so the next check reads what is actually on disk.
-- ``ctx.is_empty()``: ``True`` if no semantic model or report folder
-  was found under the given path.
+.. list-table::
+   :header-rows: 1
+
+   * - Member
+     - Meaning
+   * - ``models``
+     - A list of parsed ``SemanticModel`` objects (tables, columns,
+       measures, relationships, lineage tags, ``dax_blocks()``);
+       parsed on first access, then cached.
+   * - ``report_dirs``
+     - Every ``*.Report`` folder found under the given path, for
+       report-side rules.
+   * - ``reload()``
+     - Drops the parse cache. Call this after a fixer has rewritten
+       files so the next check reads what is actually on disk; the
+       engine already does this between the fix and re-check phases.
+   * - ``is_empty()``
+     - ``True`` if no semantic model or report folder was found under
+       the given path.
+
+``Severity``
+~~~~~~~~~~~~~~~~
+
+::
+
+    from tmdl_preflight import Severity
+
+An enum with three values, in descending order of how much they block
+a run:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Value
+     - Meaning
+   * - ``Severity.ERROR``
+     - Will break an import or deploy, or silently corrupt results.
+       Always blocks (nonzero exit, failed assertion).
+   * - ``Severity.WARNING``
+     - Suspicious; deserves a look before shipping. Blocks only under
+       ``--strict`` (CLI) or ``strict=True`` (pytest fixture).
+   * - ``Severity.INFO``
+     - Advisory; encodes a judgment call that belongs to the modeler.
+       Never blocks, not even under ``--strict``.
+
+Every ``Rule`` declares one of these as its ``severity`` class
+attribute, and every ``Violation`` it produces carries that same
+value.
+
+``Rule``
+~~~~~~~~~~~~
+
+::
+
+    from tmdl_preflight import Rule
+
+The base class every rule, built-in or custom, subclasses. Four class
+attributes and one method make a rule:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Attribute or method
+     - Meaning
+   * - ``id``
+     - A short unique code, for example ``"M003"``. Built-in ids use a
+       letter prefix by layer (M/D/R/F/B/S); pick a prefix outside
+       that set for a rule of your own.
+   * - ``name``
+     - A lowercase, hyphenated name, for example
+       ``"lineage-duplicates"``. Accepted anywhere ``id`` is, in
+       ``--select``/``--ignore`` and the pytest fixture's
+       ``select``/``ignore`` arguments.
+   * - ``severity``
+     - The ``Severity`` this rule's violations carry by default.
+   * - ``description``
+     - A one-paragraph, human-readable statement of what the rule
+       checks; this is what ``tmdl-preflight rules`` prints.
+   * - ``fixable``
+     - ``False`` by default. Set ``True`` only alongside a real
+       ``fix()`` implementation; see
+       :doc:`../how-to/modify-the-auto-fixes`.
+   * - ``check(self, ctx)``
+     - Required. Reads the ``Context`` and returns a list of
+       ``Violation`` objects; never modifies anything.
+   * - ``fix(self, ctx)``
+     - Optional, only called when ``fixable`` is ``True``. Edits files
+       on disk and returns one human-readable description per change.
+   * - ``self.violation(...)``
+     - A convenience method every rule inherits, building a
+       ``Violation`` that is already stamped with this rule's ``id``,
+       ``severity``, and ``fixable`` value.
+
+Adding a rule of your own is :doc:`../how-to/modify-the-rules-list`;
+adding a fixer to one is :doc:`../how-to/modify-the-auto-fixes`.
+
+``RuleSet``
+~~~~~~~~~~~~~~~
+
+::
+
+    from tmdl_preflight import RuleSet
+
+A thin container: one field, ``rules``, a list of ``Rule`` instances,
+and one method:
+
+::
+
+    narrowed = ruleset.select(select={"m003", "m004"}, ignore=None)
+
+``select(select=None, ignore=None)`` returns a new ``RuleSet``
+narrowed to the given rule ids or names, case-insensitively; the
+semantics match the CLI's ``--select``/``--ignore`` exactly, including
+that a name matching nothing in the set simply drops out rather than
+raising (the CLI's own "unknown rule id" error is a check it performs
+itself, before calling ``select()``).
 
 ``default_ruleset()``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -106,14 +224,10 @@ caches the result.
 
     ruleset = default_ruleset()
 
-Returns the full ``RuleSet`` of built-in rules. Narrow it with
-``RuleSet.select(select=None, ignore=None)``, which takes
-case-insensitive rule ids or names; the semantics match the CLI's
-``--select``/``--ignore`` exactly:
-
-::
-
-    narrowed = ruleset.select(select={"m003", "m004"})
+Returns the full ``RuleSet`` of all twenty-one built-in rules, in the
+order ``tmdl-preflight rules`` prints them. Narrow it with
+``RuleSet.select()``, above, or extend it by appending a rule of your
+own to ``ruleset.rules``.
 
 ``check(ctx, ruleset)`` and ``fix(ctx, ruleset)``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
