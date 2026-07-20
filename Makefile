@@ -1,6 +1,6 @@
 SPHINXOPTS ?=
 SPHINXBUILD ?= sphinx-build
-SOURCEDIR = source
+SOURCEDIR = docs
 BUILDDIR = build
 VENV = sphinxenv/bin/activate
 
