@@ -16,8 +16,8 @@ central pillar of those standards is testing.
 tests a model's TMDL artifacts against a set of rules for breaking
 changes and unaccepted practices. Some violations it repairs itself;
 others it reports and leaves to a human. Twenty-one rules ship today,
-five of them auto-fixable, reachable from the CLI or a pytest fixture.
-Both the rule set and the auto-fixes are meant
+five of them auto-fixable, reachable from the CLI, a pytest fixture,
+or a plain Python API. Both the rule set and the auto-fixes are meant
 to be extended: fork or clone the repository, add a rule of your own,
 and give it a fixer if the repair is safe to automate.
 
