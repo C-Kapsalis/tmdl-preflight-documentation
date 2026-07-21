@@ -29,12 +29,14 @@ the fix. That is the gap ``tmdl-preflight`` closes.
 2. Install
 -------------
 
-From a clone of this repository (the ``[test]`` extra pulls in pytest,
-which the how-to guides also use), install the package in editable
-mode:
+Clone the repository, then install the package in editable mode from
+inside it (the ``[test]`` extra pulls in pytest, which the how-to
+guides also use):
 
 ::
 
+    $ git clone https://github.com/c-kapsalis/tmdl-preflight.git
+    $ cd tmdl-preflight
     $ pip install -e ".[test]"
 
 Confirm the console command is on the path:
