@@ -7,7 +7,7 @@
 project = 'tmdl-preflight'
 copyright = '2026, Christoforos Kapsalis'
 author = 'Christoforos Kapsalis'
-release = '0.1.0'
+release = '1.1.0'
 
 extensions = [
     'sphinx.ext.intersphinx',

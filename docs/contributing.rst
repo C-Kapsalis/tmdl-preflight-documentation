@@ -37,7 +37,7 @@ with:
 
     $ tmdl-preflight --version
 
-    tmdl-preflight 0.1.0
+    tmdl-preflight 1.1.0
 
 Project layout
 ------------------
@@ -45,24 +45,30 @@ Project layout
 ::
 
     src/tmdl_preflight/
-    |-- cli.py             # the tmdl-preflight command (check, fix, rules)
-    |-- engine.py          # the check -> fix -> re-check loop
+    |-- cli.py             # the tmdl-preflight command (check, fix, baseline, stats, rules)
+    |-- engine.py          # check -> fix -> re-check loop, scanned counts, apply_policy()
+    |-- config.py          # config discovery and validation, profiles, excludes, exemptions
+    |-- baseline.py        # baseline files: record, apply, update
+    |-- output.py          # text / json / github / sarif / markdown renderers
+    |-- stats.py           # the stats inventory
     |-- model.py           # parsed SemanticModel: tables, columns, measures, ...
     |-- parser.py          # TMDL / PBIP folder parsing, path resolution
-    |-- dax.py             # DAX lexing helpers used by the D-series rules
+    |-- dax.py             # DAX region classifier and lexing helpers
+    |-- recognizers.py     # line-level TMDL recognizers shared by checks and fixers
+    |-- edits.py           # read_text_file() / verified_write() for every fixer
     |-- pytest_plugin.py   # the tmdl_preflight fixture
     `-- rules/
         |-- base.py             # Rule, Violation, Severity, Context, RuleSet
-        |-- structural.py       # M001-M009
-        |-- dax_rules.py        # D001-D003
-        |-- relationships.py    # R001-R005
-        |-- field_parameters.py # F001
-        |-- report.py           # B001-B002
-        |-- style.py            # S001
+        |-- structural.py       # M001-M015
+        |-- dax_rules.py        # D001-D005
+        |-- relationships.py    # R001-R007
+        |-- field_parameters.py # F001-F004
+        |-- report.py           # B001-B004
+        |-- style.py            # S001-S002
         `-- __init__.py         # ALL_RULES registry + default_ruleset()
 
     tests/       # pytest suite; fixtures/ holds the clean example model
-    examples/    # bike-shop-clean and bike-shop-broken PBIP projects
+    examples/    # bike-shop-clean and bike-shop-broken PBIP projects, plus ci/
 
 The full Diátaxis documentation (a tutorial, how-to guides, and
 reference pages) lives in this separate ``tmdl-preflight-documentation``
@@ -72,7 +78,26 @@ Each rule has an ``id`` (``M003``), a ``name`` (``lineage-duplicates``),
 a ``Severity`` (``ERROR``/``WARNING``/``INFO``), and a one-paragraph
 ``description``. A rule's ``check()`` returns ``Violation``\\s; a rule
 that can repair its own violation class sets ``fixable = True`` and
-implements ``fix()``.
+implements ``fix()``. ``baselinable = False`` marks defects a baseline
+may never hide, and ``option_defaults`` declares the per-rule options a
+configuration file may set.
+
+Design principles
+---------------------
+
+- **The detector and the fixer share one recognizer.** A fixable
+  rule's ``check()`` and ``fix()`` call the same function, so they can
+  never disagree about what counts as a defect.
+- **Every edit is surgical and verified.** Fixers change file text in
+  place and write through ``edits.verified_write()``, whose
+  ``verify(old, new)`` callback proves the edit first. If the proof
+  fails, nothing is written and the violation stays on the report.
+- **Every rule test plants a defect.** Each rule has a clean-case test
+  and at least one test that breaks a copy of the clean fixture in
+  exactly one way and asserts the rule fires.
+- **Rules that can fire on clean, Desktop-generated models are
+  warning or info.** Errors are reserved for defects that stop a model
+  from opening, deploying or evaluating.
 
 Adding a new rule
 ---------------------
@@ -112,8 +137,9 @@ Adding a new rule
    per change. Honor the safety contract: only repair what the failure
    fully determines, be idempotent, make minimal line-level edits, and
    never overwrite human-authored semantics (names, DAX,
-   relationships). The engine re-checks from disk afterward, so a
-   fixer never vouches for itself.
+   relationships). Write the file through ``edits.verified_write()``.
+   The engine re-checks from disk afterward, so a fixer never vouches
+   for itself.
 
 3. Register it in ``src/tmdl_preflight/rules/__init__.py``: import the
    class and add it to the ``ALL_RULES`` list.
@@ -165,6 +191,7 @@ Run both of these; both must pass:
 
     $ tmdl-preflight check examples/bike-shop-clean
 
+    scanned: 1 model, 6 tables, 22 columns, 6 measures, 4 relationships, 8 DAX expressions, 1 report
     tmdl-preflight: 0 error(s), 0 warning(s), 0 info(s)
 
 The second command is the end-to-end smoke test: the shipped clean
@@ -175,7 +202,7 @@ clears the four blockers and leaves only the S001 info finding.
 Commit and PR conventions
 ------------------------------
 
-- Branch off ``main``; keep each PR focused on one rule, fix, or
+- Branch off ``master``; keep each PR focused on one rule, fix, or
   topic.
 - Write imperative, present-tense commit subjects ("Add M009
   partition-mode rule," not "Added..."); keep the subject under about

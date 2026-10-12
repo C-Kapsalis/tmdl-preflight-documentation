@@ -47,7 +47,7 @@ Confirm the console command is on the path:
 
 ::
 
-    tmdl-preflight 0.1.0
+    tmdl-preflight 1.1.0
 
 3. Check the clean model
 ----------------------------
@@ -64,7 +64,11 @@ Every rule passes:
 
 ::
 
+    scanned: 1 model, 6 tables, 22 columns, 6 measures, 4 relationships, 8 DAX expressions, 1 report
     tmdl-preflight: 0 error(s), 0 warning(s), 0 info(s)
+
+The ``scanned:`` line says how much of the project the run looked at,
+so a run that silently found nothing to check is obvious.
 
 Exit code 0: every rule passes, and the model opens in Power BI
 Desktop without incident.
@@ -81,11 +85,12 @@ Five findings come back:
 ::
 
     BikeShop.SemanticModel/definition/tables/Metric Selector.tmdl:45  F001 error: stray comma run (1 orphan comma(s)) in calculated partition source [Metric Selector (partition source)] (auto-fixable)
-    BikeShop.SemanticModel/definition/tables/Sales Measures.tmdl:17  S001 info: visible measure has no formatString, so it renders with the engine's default formatting. Add a formatString, or run with --ignore S001 if your formatting strategy lives elsewhere. [Sales Measures[Units Sold]]
+    BikeShop.SemanticModel/definition/tables/Sales Measures.tmdl:21  S001 info: visible measure has no formatString, so it renders with the engine's default formatting. Add a formatString, or run with --ignore S001 if your formatting strategy lives elsewhere. [Sales Measures[Units Sold]]
     BikeShop.SemanticModel/definition/tables/Stores.tmdl  M006 error: table 'Stores' is defined in tables/ but has no 'ref table' line in model.tmdl, so it is not part of the model and Power BI will not open the project. Add: ref table Stores [Stores] (auto-fixable)
     BikeShop.SemanticModel/definition/tables/Stores.tmdl:3  M003 error: lineageTag 'e689596a-59ea-4b2c-a14d-48596a7b8c9d' duplicates the one on table Products (Products.tmdl:3) [table Stores] (auto-fixable)
     BikeShop.SemanticModel/definition/tables/__Calendar.tmdl:4  M004 warning: lineageTag 'calendar-tag-TODO' is not a canonical UUID [table __Calendar] (auto-fixable)
 
+    scanned: 1 model, 6 tables, 22 columns, 6 measures, 4 relationships, 8 DAX expressions, 1 report
     tmdl-preflight: 3 error(s), 1 warning(s), 1 info(s)
 
 Exit code 1. Every line names the file, the line where one exists, the
@@ -131,8 +136,9 @@ Four fixers run, then the re-check reports what remains:
     fixed  M004: __Calendar.tmdl:4 (table __Calendar): 'calendar-tag-TODO' -> 'a3461075-352b-454c-9469-c584419c2b3e'
     fixed  F001: Metric Selector.tmdl: removed 1 orphan comma(s) from 'Metric Selector' partition source
 
-    BikeShop.SemanticModel/definition/tables/Sales Measures.tmdl:17  S001 info: visible measure has no formatString, so it renders with the engine's default formatting. Add a formatString, or run with --ignore S001 if your formatting strategy lives elsewhere. [Sales Measures[Units Sold]]
+    BikeShop.SemanticModel/definition/tables/Sales Measures.tmdl:21  S001 info: visible measure has no formatString, so it renders with the engine's default formatting. Add a formatString, or run with --ignore S001 if your formatting strategy lives elsewhere. [Sales Measures[Units Sold]]
 
+    scanned: 1 model, 6 tables, 22 columns, 6 measures, 4 relationships, 8 DAX expressions, 1 report
     tmdl-preflight: 0 error(s), 0 warning(s), 1 info(s), 4 fix(es) applied
 
 (The regenerated UUIDs are random; yours will differ.) Three things
@@ -163,8 +169,9 @@ One finding remains:
 
 ::
 
-    BikeShop.SemanticModel/definition/tables/Sales Measures.tmdl:17  S001 info: visible measure has no formatString, so it renders with the engine's default formatting. Add a formatString, or run with --ignore S001 if your formatting strategy lives elsewhere. [Sales Measures[Units Sold]]
+    BikeShop.SemanticModel/definition/tables/Sales Measures.tmdl:21  S001 info: visible measure has no formatString, so it renders with the engine's default formatting. Add a formatString, or run with --ignore S001 if your formatting strategy lives elsewhere. [Sales Measures[Units Sold]]
 
+    scanned: 1 model, 6 tables, 22 columns, 6 measures, 4 relationships, 8 DAX expressions, 1 report
     tmdl-preflight: 0 error(s), 0 warning(s), 1 info(s)
 
 Exit code 0. S001 stays on purpose: it is an ``info``-level nudge, not
@@ -186,13 +193,18 @@ and a stricter exit code:
     $ tmdl-preflight check examples/bike-shop-broken --select M006
     $ tmdl-preflight check examples/bike-shop-broken --json
     $ tmdl-preflight check examples/bike-shop-broken --strict
+    $ tmdl-preflight check examples/bike-shop-broken --format markdown
+    $ tmdl-preflight stats examples/bike-shop-clean
 
 Where to go next
 --------------------
 
 - Add a rule of your own: :doc:`../how-to/modify-the-rules-list`
 - Add or change an auto-fix: :doc:`../how-to/modify-the-auto-fixes`
-- Every CLI flag, exit code, and output format:
+- Every CLI flag, exit code, and the rule catalog:
   :doc:`../reference/usage`
+- Configuration files, exemptions, baselines and output formats:
+  :doc:`../reference/configuration`
+- Run it in CI and pre-commit: :doc:`../how-to/run-in-ci`
 - The pytest fixture, the Python API, and the design behind the
   check → fix → re-check loop: :doc:`../reference/customization`
