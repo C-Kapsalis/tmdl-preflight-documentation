@@ -2,7 +2,7 @@ How to modify the auto-fixes
 ================================
 
 Goal: give a rule of your own an auto-fix, or change what one of the
-five built-in fixers does. Only five of the twenty-one rules ship a
+ten built-in fixers does. Only ten of the thirty-seven rules ship a
 fixer, and that is deliberate; read the safety contract below before
 writing one.
 
@@ -35,14 +35,38 @@ Where the built-in fixers live
    * - F001 fieldparam-comma-runs
      - ``FieldParameterCommaRunsRule.fix()``
      - ``src/tmdl_preflight/rules/field_parameters.py``
+   * - M011 property-after-child-block
+     - ``PropertyAfterChildBlockRule.fix()``
+     - ``src/tmdl_preflight/rules/structural.py``
+   * - M013 dangling-description
+     - ``DanglingDescriptionRule.fix()``
+     - ``src/tmdl_preflight/rules/structural.py``
+   * - F002 fieldparam-missing-separator
+     - ``MissingRowSeparatorRule.fix()``
+     - ``src/tmdl_preflight/rules/field_parameters.py``
+   * - F003 fieldparam-trailing-comma
+     - ``TrailingRowCommaRule.fix()``
+     - ``src/tmdl_preflight/rules/field_parameters.py``
    * - B001 bookmark-int-types
      - ``BookmarkIntegerTypesRule.fix()``
      - ``src/tmdl_preflight/rules/report.py``
+   * - B003 bookmark-options-schema
+     - ``BookmarkOptionsSchemaRule.fix()``
+     - ``src/tmdl_preflight/rules/report.py``
+
+Every built-in fixer shares two helpers. The rule's ``check()`` and
+``fix()`` call the same recognizer (``recognizers.py`` or
+``dax.py``), so they agree on what a defect is. And every write goes
+through ``edits.verified_write(original, new_text, verify)``: the
+``verify`` callback must prove the edit (for JSON, by parsing both
+versions and comparing) or raise ``EditRefused``, in which case
+nothing is written. The helper also keeps the file's newline style and
+byte-order mark.
 
 To change one's behavior, for example if you want M004's regenerated
 tag to come from a seeded generator instead of a random one, edit that
-method directly in your fork; there is no configuration hook for
-fixer internals.
+method directly in your fork. The configuration file can select,
+ignore or re-grade rules, but it has no hook for fixer internals.
 
 Add a fixer to a rule of your own
 ---------------------------------------
@@ -51,6 +75,9 @@ Starting from a rule built as in :doc:`modify-the-rules-list`, set
 ``fixable = True`` and implement ``fix()``:
 
 ::
+
+    from tmdl_preflight.edits import EditRefused, read_text_file, verified_write
+
 
     class TableDescriptionRule(Rule):
         id = "X001"
@@ -68,11 +95,16 @@ Starting from a rule built as in :doc:`modify-the-rules-list`, set
                 for table in model.tables.values():
                     if table.is_hidden:
                         continue
-                    text = table.file.read_text(encoding="utf-8")
-                    if not text.lstrip().startswith("///"):
-                        table.file.write_text(
-                            f"/// {table.name}\n{text}", encoding="utf-8"
-                        )
+                    original = read_text_file(table.file)
+                    if original.text.lstrip().startswith("///"):
+                        continue
+                    new_text = f"/// {table.name}{original.newline}{original.text}"
+
+                    def verify(old, new):
+                        if not new.endswith(old):
+                            raise EditRefused("only a prefix may be added")
+
+                    if verified_write(original, new_text, verify):
                         applied.append(f"{table.file.name}: added description stub")
             return applied
 
@@ -86,7 +118,7 @@ The safety contract
 ------------------------
 
 A repair earns a fixer only if it satisfies all of the following. Only
-five of the twenty-one built-in rules do:
+ten of the thirty-seven built-in rules do:
 
 1. **The failure mode fully determines the repair.** No intent needs
    to be inferred. A duplicate tag needs a fresh unique value; an

@@ -186,6 +186,15 @@ attributes and one method make a rule:
    * - ``fix(self, ctx)``
      - Optional, only called when ``fixable`` is ``True``. Edits files
        on disk and returns one human-readable description per change.
+   * - ``baselinable``
+     - ``True`` by default. ``False`` for defects that stop a model
+       from opening or deploying; such violations are never written to
+       a baseline (see :doc:`configuration`).
+   * - ``option_defaults``
+     - A dict of per-rule options and their defaults, for example
+       ``{"min_length": 10}``. The configuration file may override
+       them under ``rules.<ID>``; ``self.options`` holds the merged
+       values.
    * - ``self.violation(...)``
      - A convenience method every rule inherits, building a
        ``Violation`` that is already stamped with this rule's ``id``,
@@ -224,7 +233,7 @@ itself, before calling ``select()``).
 
     ruleset = default_ruleset()
 
-Returns the full ``RuleSet`` of all twenty-one built-in rules, in the
+Returns the full ``RuleSet`` of all thirty-seven built-in rules, in the
 order ``tmdl-preflight rules`` prints them. Narrow it with
 ``RuleSet.select()``, above, or extend it by appending a rule of your
 own to ``ruleset.rules``.
@@ -274,9 +283,13 @@ present there survived the repair attempt.
      - ``1`` if any error exists (or any warning, when ``strict`` is
        ``True``); ``0`` otherwise. The same logic the CLI uses to pick
        its process exit code.
+   * - ``scanned``
+     - Counts of what the run looked at (tables, measures,
+       relationships, DAX blocks, and so on).
    * - ``to_dict()``
      - The same structure the CLI's ``--json`` output serializes: a
-       ``summary``, the ``fixes`` list, and the ``violations`` list.
+       ``summary``, the ``fixes`` list, the ``violations`` list, and
+       ``scanned``.
 
 ``Violation``
 ~~~~~~~~~~~~~~~~~
@@ -326,10 +339,13 @@ violation is still on the final report and the exit code is still
 nonzero. Auto-repair can therefore never mask a defect; the worst it
 can do is fail to remove one, exactly as if it did not exist.
 
-Only five of the twenty-one rules ship a fixer, and that is
+Only ten of the thirty-seven rules ship a fixer, and that is
 deliberate: a repair earns one only if the failure mode fully
 determines it, it never overwrites human-authored semantics, it is
-idempotent, and it is a minimal, line-level edit. The full contract,
+idempotent, and it is a minimal, line-level edit. Every fixer also
+proves its edit before writing it (``edits.verified_write``), so a
+repair that cannot be shown to change only what it claims is never
+written. The full contract,
 with the two rules that fail it on purpose, is in
 :doc:`../how-to/modify-the-auto-fixes`.
 
@@ -350,24 +366,24 @@ much infrastructure the check needs.
    * - Structural
      - Do the files even parse? Is identity metadata sound? Will
        Power BI open the project at all?
-     - M001-M009
+     - M001-M015
      - the files
    * - Expression
      - Is the DAX lexically sound, and are its references real?
-     - D001-D003
+     - D001-D005
      - a parsed model
    * - Model integration
      - Do cross-object structures cohere, relationships, field
        parameters?
-     - R001-R005, F001
+     - R001-R007, F001-F004
      - a parsed model
    * - Report
      - Does the report layer agree with itself?
-     - B001, B002
+     - B001-B004
      - the ``*.Report`` folder
    * - Advisory
      - Is the model following good practice?
-     - S001 (and R004/R005 by severity)
+     - S001, S002 (and R004/R005 by severity)
      - a parsed model
 
 The ordering is diagnostic, not just taxonomic. A defect at one layer

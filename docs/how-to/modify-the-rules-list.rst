@@ -2,7 +2,7 @@ How to modify the rules list
 ================================
 
 Goal: add a rule of your own, enforcing a convention the built-in
-twenty-one do not cover, such as "every visible table must carry a
+thirty-seven do not cover, such as "every visible table must carry a
 description," using the same engine, CLI selection, and pytest fixture
 the built-in rules use. There is no plugin or entry-point discovery
 mechanism for this; a custom rule is added in code, in your own fork or
@@ -98,6 +98,7 @@ and that running the fixer twice changes nothing further.
 There is no ``--disable`` flag for permanently retiring a built-in
 rule; the registry is the source of truth. To drop one from your fork,
 remove its instance from ``ALL_RULES`` in
-``src/tmdl_preflight/rules/__init__.py``. To skip one only for a
-particular run or repository without forking anything, use
-``--ignore`` instead; see :doc:`../reference/usage`.
+``src/tmdl_preflight/rules/__init__.py``. To skip one for a particular
+run without forking anything, use ``--ignore``; to skip it for a whole
+repository, list it under ``ignore`` in the configuration file. See
+:doc:`../reference/usage` and :doc:`../reference/configuration`.
