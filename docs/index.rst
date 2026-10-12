@@ -15,9 +15,11 @@ central pillar of those standards is testing.
 ``tmdl-preflight`` is that testing layer: a CLI built on pytest that
 tests a model's TMDL artifacts against a set of rules for breaking
 changes and unaccepted practices. Some violations it repairs itself;
-others it reports and leaves to a human. Twenty-one rules ship today,
-five of them auto-fixable, reachable from the CLI, a pytest fixture,
-or a plain Python API. Both the rule set and the auto-fixes are meant
+others it reports and leaves to a human. Thirty-seven rules ship
+today, ten of them auto-fixable, reachable from the CLI, a pytest
+fixture, or a plain Python API. A configuration file, documented
+exemptions and a baseline let a team adopt it on a model that is not
+clean yet, and its SARIF, GitHub and Markdown output plug it into CI. Both the rule set and the auto-fixes are meant
 to be extended: fork or clone the repository, add a rule of your own,
 and give it a fixer if the repair is safe to automate.
 
@@ -53,6 +55,8 @@ the pull request is even opened.
    tutorials/getting-started
    how-to/modify-the-rules-list
    how-to/modify-the-auto-fixes
+   how-to/run-in-ci
    reference/usage
+   reference/configuration
    reference/customization
    contributing
