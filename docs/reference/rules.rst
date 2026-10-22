@@ -2,10 +2,11 @@ Rule reference
 =================
 
 The rule catalog is the tool's specification of what a model has to
-satisfy. This page is that catalog: every rule, its severity, whether it
-carries a fixer, and what it checks. The tables are generated from the
-tool's own rule list, so they cannot drift from the binary you installed;
-see `The catalog is published by the tool`_.
+satisfy. This page is that catalog for version 1.2.1: every rule, its
+severity, whether it carries a fixer, and what it checks. The tables
+are rendered from the tool's own rule list (``tmdl-preflight rules
+--json``); to compare them with the version you installed, see
+`The catalog is published by the tool`_.
 
 The catalog at a glance
 -------------------------
@@ -83,8 +84,10 @@ it:
        each is safe in a blanket fix.
 
 ``tmdl-preflight rules --format markdown --out FILE --check`` compares
-``FILE`` with a fresh render, byte for byte, and exits ``1`` when the
-file is missing or stale, so a committed catalog cannot rot quietly.
+``FILE`` with a fresh render and exits ``1`` when the file is missing
+or stale (``DRIFT: FILE is stale.``), so a committed catalog cannot rot
+quietly. It prints ``OK: catalog up to date.`` and exits ``0``
+otherwise.
 The top-level flag ``tmdl-preflight --rules`` is an alias for
 ``tmdl-preflight rules``.
 
@@ -458,12 +461,33 @@ directly.
        comment-refs --tighten'). Colours such as #FF00AA and names such
        as #Report Measures are not references. Opt-in.
 
+What changed in 1.2.1
+---------------------
+
+The catalog is the same as in 1.2.0: the same 119 rules, with the same
+severities, fixers and options. Three behaviors changed:
+
+- A blanket ``fix`` names a skipped unsafe fixer (``not fixed
+  <RULE>:``, and ``skipped_fixers`` in JSON) only when the check
+  reported findings that fixer repairs. P001 is also named for P002
+  findings. In 1.2.0, every blanket fix printed a ``not fixed  R007:``
+  line, whatever the model held.
+- ``manifest`` lists the tables in the same order on every OS. On
+  Windows, 1.2.0 sorted them differently, so a manifest committed from
+  one OS read as stale (``DRIFT``) under ``manifest --check`` on the
+  other.
+- The floor files that ``baseline --capture-floors`` and
+  ``dead-facts --capture`` write end their lines with LF on Windows too.
+
 What changed in 1.2.0
 ---------------------
 
-Four rules changed severity and two gained a fixer. If you gate CI on a
+Four rules changed their default severity (M006, M011, R007 and F004),
+M013 now reports a description at the end of a file as an error, and
+three rules gained a fixer (D004, F004 and R007). If you gate CI on a
 severity, these are the ones to re-check; the tool's own release notes
-carry the evidence each change was made on.
+carry the evidence each change was made on. The "Was" column is read
+from ``tmdl-preflight rules --json`` at 1.1.0.
 
 .. list-table::
    :header-rows: 1
@@ -513,8 +537,10 @@ The rules that carry a fixer
 
 Twenty-five rules carry a fixer. Four of them are marked **unsafe**: the
 repair changes data or regenerates content, so it never runs as part of a
-blanket ``fix``; select the rule explicitly to apply it. The JSON
-payload lists the skipped ones under ``skipped_fixers``.
+blanket ``fix``; select the rule explicitly to apply it. When the check
+reported findings a skipped unsafe fixer repairs, the run names it on a
+``not fixed  <RULE>:`` line, and the JSON payload lists it under
+``skipped_fixers``.
 
 .. list-table::
    :header-rows: 1
@@ -601,9 +627,9 @@ payload lists the skipped ones under ``skipped_fixers``.
 The rules
 ----------
 
-.. The tables below are the tool's own rule list, rendered in the
-   shape ``tmdl-preflight rules --format markdown`` produces. Do not
-   edit them by hand: regenerate them from the tool.
+.. The tables below are the tool's own rule list (rules --json at
+   1.2.1), grouped by family on this page. Do not edit them by hand:
+   regenerate them from the tool.
 
 Structural rules (M)
 ~~~~~~~~~~~~~~~~~~~~
@@ -1420,7 +1446,10 @@ The rules in detail
 --------------------
 
 The tables above say what each rule checks. The entries below say why
-it matters and show a minimal example of the defect.
+it matters and show a minimal example of the defect. Where an entry
+says what Power BI does with a defect, it repeats the rule's own
+description; the release notes record measured Power BI Desktop
+behavior for M003, M004, M006 and F001 only.
 
 **M006 model-table-refs** (warning, fixer). Every table defined under
 ``tables/`` should be listed in ``model.tmdl`` with a ``ref table
@@ -1542,8 +1571,10 @@ true. Zero tolerance: it can never be baselined.
 
 **F002 fieldparam-missing-separator** (error, fixer). A row appended
 to a ``{ (...), (...) }`` constructor without a comma after the
-previous row makes the source unparseable and the table loads empty.
-Rows may span lines or share one; the fixer inserts the comma.
+previous row makes the source unparseable. The Desktop symptom is
+expected to match F001's, but it has not been observed for this defect
+on its own. Rows may span lines or share one; the fixer inserts the
+comma.
 
 ::
 

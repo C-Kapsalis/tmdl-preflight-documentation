@@ -21,6 +21,8 @@ arity
 autodetected
 autodetection
 backend
+backtick
+backticks
 baselinable
 baselined
 booleans
@@ -62,6 +64,7 @@ lexically
 lineageTag
 linter
 linters
+macOS
 mis
 modelPermission
 multiline
@@ -70,6 +73,7 @@ nameof
 orchestrator
 organisation
 pageOrder
+parametrized
 pbip
 pbir
 policyType
@@ -92,6 +96,7 @@ rowNumber
 ruleset
 scaffolded
 schemas
+severities
 sourceColumn
 sourceExpression
 subclasses
@@ -116,6 +121,7 @@ unhide
 unparseable
 unresolvable
 unwired
+uv
 validator
 visualName
 whitespace

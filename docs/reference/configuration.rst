@@ -25,7 +25,10 @@ Every key is validated. An unknown key, an unknown rule id or name, or
 an option of the wrong type stops the run with exit code ``2`` and a
 message naming the problem; nothing is silently ignored.
 
-::
+An example ``pyproject.toml`` table (it was loaded and validated by
+``tmdl-preflight check`` 1.2.1 when this page was written):
+
+.. code-block:: toml
 
     [tool.tmdl-preflight]
     select = ["M001", "M002", "M003"]      # optional; default: every rule
@@ -77,23 +80,28 @@ the keys of the top-level object.
        severity.
    * - ``exclude``
      - Globs of files whose violations are not reported. Files are
-       still parsed, so references into them still resolve.
+       still parsed, so references into them still resolve. A
+       configured list replaces the default exclusions (below);
+       ``exclude = []`` turns them off.
    * - ``rules.<ID>``
      - Per-rule options. Each rule declares the options it accepts
        (``tmdl-preflight rules --json`` lists them, with their
-       defaults); 70 rules declare options today. Examples: S002
+       defaults); 70 of the 119 rules declare options. Examples: S002
        ``min_length`` and ``placeholder_words``, D004
        ``check_bare_references``, D001 ``min_success_rate``, D002
        ``excluded_tables``, M013 ``fix_mode``, M016 ``required_files``,
-       R007 ``fix_autodetected_relationships``, R011
-       ``min_fact_coverage_percent``, and the whole ``C001``-``C012``
-       and ``O001``-``O015`` contract sets.
+       R007 ``fix_autodetected_relationships`` (``true`` lets a blanket
+       ``fix`` run R007's unsafe fixer), R011
+       ``min_fact_coverage_percent``, every contract rule from C001 to
+       C012, and every O rule except O008, O011, O012 and O014.
    * - ``exemptions``
      - A list of documented exceptions, below.
    * - ``profiles.<name>``
      - A table with any of the keys above, deep-merged over the base
        settings when the run passes ``--profile <name>``. Tables
-       merge key by key; lists and values replace.
+       merge key by key; lists and values replace. ``--profile`` with a
+       name that does not exist, or with no configuration file, is an
+       error (exit ``2``), never a silent no-op.
    * - ``contracts``, ``refresh_policy``, ``live``, ``advisory``, ``table_roles``, ``measure_classes``, ``bookmarks``, ``manifest``
      - Project sections that a group of rules reads as a whole: the
        declared model contracts, the incremental-refresh settings, the
@@ -118,6 +126,22 @@ In a glob, ``*`` matches within one folder, ``**`` matches across
 folders, and ``?`` matches one character. A pattern without ``/``
 matches the file name alone: ``Legacy*.tmdl`` and
 ``**/tables/Legacy*.tmdl`` are equivalent for table files.
+
+Default exclusions
+~~~~~~~~~~~~~~~~~~~~~~
+
+With no ``exclude`` key in the configuration, the tool skips archived
+copies: every file whose path below the checked folder has a folder
+name containing ``legacy``, ``_backup`` or ``_b2`` (a substring match,
+so ``old_legacy_x/`` and ``spinout-05_db_backup/`` are skipped). Only
+folders below the checked path count: a project checked out under
+``C:\legacy\`` is still scanned, and so is a ``legacy`` folder that you
+pass as the path itself.
+
+The text report does not mention skipped files. The JSON report counts
+them in ``summary.excluded_files``. To scan everything, set
+``exclude = []``; to choose your own globs, set ``exclude`` to them,
+which replaces the default.
 
 Exemptions
 --------------
@@ -155,10 +179,18 @@ Baselines
 A baseline lets a team adopt the tool on a model that is not clean yet:
 record what fails today, then fail only on what is new.
 
-::
+.. code-block:: text
 
-    $ tmdl-preflight baseline .
-    $ tmdl-preflight check . --baseline .tmdl-preflight-baseline.json
+    tmdl-preflight baseline .
+    tmdl-preflight check . --baseline .tmdl-preflight-baseline.json
+
+Run on a copy of the tool's ``examples/bike-shop-broken`` model, the
+first command prints:
+
+.. code-block:: text
+
+    tmdl-preflight: baseline .tmdl-preflight-baseline.json: 6 violation(s) recorded
+    tmdl-preflight: 1 violation(s) of rules that can never be baselined were not recorded (M003); they will still fail every check
 
 The file records violation identities: rule id, project-relative file,
 object, and how many violations share that identity. It has no line
@@ -170,10 +202,10 @@ counts, and lists **fixed** entries (fewer violations than recorded)
 and **stale** entries (a rule that no longer exists, or one that can
 never be baselined). Shrink the file as violations get fixed:
 
-::
+.. code-block:: text
 
-    $ tmdl-preflight baseline . --update
-    $ tmdl-preflight baseline . --update --accept-new
+    tmdl-preflight baseline . --update
+    tmdl-preflight baseline . --update --accept-new
 
 ``--update`` only ever removes entries or lowers counts. Growing the
 baseline takes the explicit ``--accept-new``. The ``baseline`` command
@@ -204,21 +236,24 @@ code is the same for every format.
      - Use
    * - ``text``
      - The default, for people. One line per violation, then the
-       ``scanned:`` line, any notes, and the summary line.
+       ``scanned:`` line, any notes, and the summary line (the full
+       order is in :doc:`usage`).
    * - ``json``
      - For scripts. Described in :doc:`usage`. ``--json`` is an alias.
    * - ``github``
      - GitHub Actions workflow commands
        (``::error file=...,line=...,title=...::message``), which show up
        as annotations on the pull request diff. Info findings become
-       notices.
+       notices. File paths are relative to the working directory, so
+       run the command from the repository root.
    * - ``sarif``
      - SARIF 2.1.0, for GitHub code scanning and other SARIF viewers.
-       One run, with every rule in ``tool.driver.rules`` and one result
-       per violation; errors, warnings and infos map to the SARIF
-       levels ``error``, ``warning`` and ``note``. File URIs are
-       relative to the working directory, so run the command from the
-       repository root.
+       One run, with every rule the run used in ``tool.driver.rules``
+       and one result per violation; errors, warnings and infos map to
+       the SARIF levels ``error``, ``warning`` and ``note``. File URIs
+       are relative to the working directory, so run the command from
+       the repository root.
    * - ``markdown``
-     - A summary and a table of violations, for pull request comments
-       or a job summary (``>> $GITHUB_STEP_SUMMARY``).
+     - A summary, a table of violations and the console notes as a
+       list, for pull request comments or a job summary
+       (``>> "$GITHUB_STEP_SUMMARY"``).
