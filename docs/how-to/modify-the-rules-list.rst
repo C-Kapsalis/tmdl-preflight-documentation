@@ -3,10 +3,16 @@ How to modify the rules list
 
 Goal: add a rule of your own, enforcing a convention the built-in
 119 rules do not cover, such as "every visible table must carry a
-description," using the same engine, CLI selection, and pytest fixture
-the built-in rules use. There is no plugin or entry-point discovery
-mechanism for this; a custom rule is added in code, in your own fork or
-a wrapper script.
+description," on the same engine the built-in rules use. There is no
+plugin or entry-point discovery mechanism for this; a custom rule is
+added in code, in one of two places:
+
+- **a wrapper script**, which runs the rule through the Python API
+  (steps 1 and 2 below). The ``tmdl-preflight`` command and the
+  ``tmdl_preflight`` pytest fixture do not see a rule defined this way;
+- **your own fork** of the tool, where you register the rule in
+  ``ALL_RULES`` (step 4). The command, the configuration file and the
+  pytest fixture then treat it like a built-in rule.
 
 You will need working familiarity with Python and, for the pytest
 route, with the pytest library itself, plus enough familiarity with
@@ -21,7 +27,7 @@ worth reading first if any of this feels underspecified.
 
 A rule is a class with a few class attributes and a ``check()`` method:
 
-::
+.. code-block:: python
 
     from tmdl_preflight import Rule, Severity, Context, Violation
 
@@ -61,9 +67,10 @@ What ``ctx`` gives you:
 ------------
 
 Build a ``RuleSet`` that includes your rule alongside the built-ins,
-and hand it to the engine:
+and hand it to the engine. ``Context`` takes a path (a string or a
+``pathlib.Path``) in any of the shapes the command accepts:
 
-::
+.. code-block:: python
 
     from tmdl_preflight import Context, check, default_ruleset
 
@@ -75,14 +82,19 @@ and hand it to the engine:
         print(v.rule_id, v.message)
 
 ``default_ruleset()`` holds the rules a plain run executes: the 119
-built-in rules minus the 32 opt-in ones. To work with the whole
-catalog, opt-in rules included, use ``full_ruleset()`` from
+built-in rules minus the 32 opt-in ones, 87 rules. To work with the
+whole catalog, opt-in rules included, use ``full_ruleset()`` from
 ``tmdl_preflight.rules`` instead.
+
+To run only some rules, narrow the set with ``select()``. It compares
+lower-case ids and names, so pass them in lower case:
+``ruleset.select(select={"y001", "m003"})``. An upper-case ``"M003"``
+matches nothing.
 
 The same ``ruleset`` works with ``fix()`` if your rule also has a
 fixer (see :doc:`modify-the-auto-fixes`), and inside a pytest test:
 
-::
+.. code-block:: python
 
     def test_custom_convention():
         report = check(Context("MyProject/"), ruleset)
@@ -91,18 +103,29 @@ fixer (see :doc:`modify-the-auto-fixes`), and inside a pytest test:
 3. Test it like the built-ins
 ----------------------------------
 
-Follow the pattern in the project's own ``tests/test_rules_*.py``: copy
-a clean fixture model into a temporary directory, mutate it to trigger
-exactly your failure mode, and assert the violation is detected. If you
+Follow the pattern of the tool's own test suite (``tests/`` in the
+repository): copy a clean fixture model into a temporary directory,
+mutate it to trigger exactly your failure mode, and assert the
+violation is detected. If you
 also wrote a fixer, assert that fix, then re-check, comes back clean,
 and that running the fixer twice changes nothing further.
 
-4. Remove or disable a built-in rule
+4. Register it in a fork
+---------------------------
+
+In a fork, import the class in ``src/tmdl_preflight/rules/__init__.py``
+and add it to the ``ALL_RULES`` list there (the list holds classes, not
+instances). ``tmdl-preflight rules`` then lists it, ``--select Y001``
+and the configuration file accept its id and name, and the pytest
+fixture runs it. :doc:`../contributing` covers the rest of the steps
+for a rule meant for the tool itself.
+
+5. Remove or disable a built-in rule
 -----------------------------------------
 
 There is no ``--disable`` flag for permanently retiring a built-in
 rule; the registry is the source of truth. To drop one from your fork,
-remove its instance from ``ALL_RULES`` in
+remove its class from ``ALL_RULES`` in
 ``src/tmdl_preflight/rules/__init__.py``. To skip one for a particular
 run without forking anything, use ``--ignore``; to skip it for a whole
 repository, list it under ``ignore`` in the configuration file. See

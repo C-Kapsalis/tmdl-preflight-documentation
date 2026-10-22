@@ -2,12 +2,11 @@ Contributing
 ================
 
 ``tmdl-preflight`` is a preflight linter and auto-fixer for Power BI
-semantic models saved in TMDL format (PBIP folders): it catches the
-defects that stop Power BI Desktop from opening a project, duplicate
-lineage tags, tables with no partition, inline ``#table`` entity
-sources, malformed lineage tags, field-parameter comma runs, and the
-report files Fabric needs, and mechanically repairs the ones whose fix
-is fully determined by the failure.
+semantic models saved in TMDL format (PBIP folders). It catches defects
+in the model and report files (duplicate or malformed lineage tags,
+tables with no partition, inline ``#table`` entity sources,
+field-parameter comma runs, missing report files) and mechanically
+repairs the ones whose fix is fully determined by the failure.
 
 Contributions are welcome: new rules, fixers, docs, and bug reports.
 This page covers how to set up, where things live, and how to add a
@@ -16,33 +15,51 @@ rule.
 Development setup
 ---------------------
 
-The tool has zero runtime dependencies (standard library only, Python
-3.10 or later); the only dev dependency is pytest.
+The tool has no required runtime dependency (standard library only,
+Python 3.10 or later; PyYAML is optional, for YAML targets files). The
+``[test]`` extra installs the development dependencies, pytest and
+PyYAML.
 
-::
+PowerShell:
 
-    $ git clone https://github.com/C-Kapsalis/tmdl-preflight.git
-    $ cd tmdl-preflight
-    $ python -m venv .venv
-    $ source .venv/bin/activate
-    $ pip install -e ".[test]"
-    $ pytest
+.. code-block:: powershell
 
-(On Windows, activate with ``.venv\\Scripts\\activate`` instead.)
+    git clone https://github.com/C-Kapsalis/tmdl-preflight.git
+    cd tmdl-preflight
+    python -m venv .venv
+    .venv\Scripts\Activate.ps1
+    pip install -e ".[test]"
+    pytest
+
+bash:
+
+.. code-block:: bash
+
+    git clone https://github.com/C-Kapsalis/tmdl-preflight.git
+    cd tmdl-preflight
+    python3 -m venv .venv
+    source .venv/bin/activate
+    pip install -e ".[test]"
+    pytest
+
 ``pip install -e .`` puts the ``tmdl-preflight`` console command on
 your PATH and registers the ``tmdl_preflight`` pytest plugin. Verify
 with:
 
-::
+.. code-block:: text
 
-    $ tmdl-preflight --version
+    tmdl-preflight --version
 
-    tmdl-preflight 1.2.0
+At the ``v1.2.1`` tag this prints:
+
+.. code-block:: text
+
+    tmdl-preflight 1.2.1
 
 Project layout
 ------------------
 
-::
+.. code-block:: text
 
     src/tmdl_preflight/
     |-- cli.py             # the tmdl-preflight command (16 subcommands)
@@ -185,8 +202,16 @@ Adding a new rule
 
 4. Add a test in ``tests/`` (see Testing, below).
 
-5. Document it: add an entry to the rule catalog in this
-   documentation's :doc:`reference/usage`, and update
+5. Regenerate the tool's own catalog page, which a test compares with
+   a fresh render:
+
+   .. code-block:: text
+
+       tmdl-preflight rules --format markdown --out docs/rules.md
+
+6. Document it: add the rule to this documentation's
+   :doc:`reference/rules` (its tables are rendered from
+   ``tmdl-preflight rules --json``), and update
    :doc:`how-to/modify-the-rules-list` or
    :doc:`how-to/modify-the-auto-fixes` if the change is substantial
    enough to affect the recipe those pages teach.
@@ -194,22 +219,27 @@ Adding a new rule
 Testing
 -----------
 
-Tests live in ``tests/``, one ``test_rules_*.py`` file per rule
-module. The shared fixtures in ``tests/conftest.py`` give you a
-pristine copy of the Pedal and Sprocket Bike Co. model:
+Tests live in ``tests/``, mostly one file per rule or feature. The
+shared fixtures in ``tests/conftest.py`` give you a pristine copy of
+the Pedal and Sprocket Bike Co. model, and of the other fixtures under
+``tests/fixtures/``:
 
 - ``project``, a disposable copy of the clean model in ``tmp_path``,
   safe to mutate.
 - ``definition``/``report_dir``, the model and report folders inside
   it.
 - ``clean_project``, the pristine fixture; never mutate it.
+- ``replace_in(path, old, new)``, which plants a defect by replacing
+  one exact snippet (the test fails if the snippet is missing or
+  appears more than once).
+- ``stand_in("name")``, a disposable copy of ``tests/fixtures/name``.
 
 Follow the built-in pattern: copy the clean fixture, break exactly one
 thing to trigger your failure mode, assert the violation is detected,
 and, for a fixer, assert that fix, then re-check, comes back clean and
 that a second fix is a no-op (idempotent). For example:
 
-::
+.. code-block:: python
 
     def test_duplicate_lineage_tag_is_flagged(project, definition):
         stores = definition / "tables" / "Stores.tmdl"
@@ -220,45 +250,130 @@ that a second fix is a no-op (idempotent). For example:
 Before you open a PR
 -------------------------
 
-Run both of these; both must pass:
+Run both of these from the repository root; both must pass:
 
-::
+.. code-block:: text
 
-    $ pytest
+    pytest
+    tmdl-preflight check examples/bike-shop-clean
 
-::
+The second command prints exactly this and exits ``0``:
 
-    $ tmdl-preflight check examples/bike-shop-clean
+.. code-block:: text
 
     BikeShop.SemanticModel/definition/tables/Sales Measures.tmdl:26  M017 info: Line 26: Multiline DAX should use triple backticks
     BikeShop.SemanticModel/definition/tables/__Calendar.tmdl  R013 info: calendar __Calendar has no Year, Quarter, Month, Week, Day column(s). [__Calendar]
 
     scanned: 1 model, 6 tables, 22 columns, 6 measures, 4 relationships, 8 DAX expressions, 1 report
-    (the run then prints its console report: the DAX validation summary
-    and the R001, R002, R004, R005, R009, R010, R012, R013 and R014 blocks)
+    DAX Validation Summary:
+       Total expressions: 6
+       Valid: 6 (100.0%)
+       Invalid: 0 (0.0%)
+    R001: BikeShop.SemanticModel
+    Validated 4 relationships
+       Errors: 0
+       Warnings (inactive): 1
+       Success rate: 100.0%
+    Inactive: Sales -> __Calendar
+    R002: BikeShop.SemanticModel
+    Cardinality Distribution:
+       many_to_one            4
+    R004: BikeShop.SemanticModel
+    Cross-filtering Analysis:
+       Unidirectional: 4
+       Bidirectional: 0
+    Bidirectional count is acceptable (<=3)
+    R005: BikeShop.SemanticModel
+    Total tables: 6
+    With relationships: 4
+    Orphans: 2
+
+    Orphan Categories:
+       - Plot Specific tables: 0
+       - Selector tables: 1
+       - Measure tables: 1
+       - Other: 0
+
+    Expected orphans (Plot Specific/Selector/Measure): 2
+    Unexpected orphans: 0
+    R009: BikeShop.SemanticModel
+    Found 4 relationships (3 active, 1 inactive)
+    R010: BikeShop.SemanticModel
+    Circular Dependency Analysis:
+       Active relationships checked: 3
+       Tables in graph: 1
+       Cycles detected: 0
+    R012: BikeShop.SemanticModel
+    Calendar Relationship Cardinality:
+    Total calendar relationships: 2
+    Valid (many-to-one): 2
+    Invalid cardinality: 0
+    R013: BikeShop.SemanticModel
+    Calendar Table Completeness:
+    Total columns: 5
+    Standard columns present: 1/6
+
+    Present standard columns:
+      - Date
+
+    Advisory - Missing standard columns:
+      - Year
+      - Quarter
+      - Month
+      - Week
+      - Day
+
+    These columns are recommended for complete date hierarchies.
+
+    Additional columns (4):
+      - Calendar Month
+      - Calendar Month Name
+      - Calendar Quarter
+      - Calendar Year
+    R014: BikeShop.SemanticModel
+    Total dimension tables (_prefix): 1
+    With key columns: 1 (100.0%)
+    Without apparent keys: 0
+
+    All dimension tables have key columns matching the canonical patterns.
+    No .bookmark.json files found under examples/bike-shop-clean
     tmdl-preflight: 0 error(s), 0 warning(s), 2 info(s)
 
 The second command is the end-to-end smoke test. Its output is fixed:
 the shipped example is what it is, and the findings above are the ones
-it produces. The model and the report are both clean — the report
-folder is in the PBIR layout a report saved by Power BI Desktop has —
-so the run reports nothing but two info findings (M017 and R013). The
-command exits ``0``, and a change to that output is a change to the
-smoke test.
+it produces. The model and the report pass every error and warning
+rule, so the run reports nothing but two info findings (M017 and
+R013), and a change to that output is a change to the smoke test.
 
-If you touched a fixer, also confirm ``tmdl-preflight fix`` on a copy
-of ``examples/bike-shop-broken`` repairs the four seeded defects and
-leaves the info findings behind:
+If you touched a fixer, also confirm that ``tmdl-preflight fix`` on a
+copy of ``examples/bike-shop-broken`` repairs the four seeded defects
+and leaves the info findings behind.
 
-::
+PowerShell:
 
-    $ cp -r examples/bike-shop-broken /tmp/bike-shop
-    $ tmdl-preflight fix /tmp/bike-shop
+.. code-block:: powershell
+
+    Copy-Item -Recurse examples/bike-shop-broken ../bike-shop
+    tmdl-preflight fix ../bike-shop
+
+bash:
+
+.. code-block:: bash
+
+    cp -r examples/bike-shop-broken ../bike-shop
+    tmdl-preflight fix ../bike-shop
+
+The run ends with these lines:
+
+.. code-block:: text
+
     tmdl-preflight: 0 error(s), 0 warning(s), 3 info(s), 4 fix(es) applied
 
-That summary line is the whole verdict: four fixers ran, and the
-re-check still finds three info findings. The exit code is ``0``:
-``fix`` reports the state of the run rather than hiding it.
+    Removed 1 orphan comma(s) across 1 file(s). Commit the changes and re-sync the affected workspace(s).
+
+The summary line is the verdict: four fixers ran, and the re-check
+still finds three info findings. The exit code is ``0``. Delete
+``../bike-shop`` afterwards.
 
 Commit and PR conventions
 ------------------------------

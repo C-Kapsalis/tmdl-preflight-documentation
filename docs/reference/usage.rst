@@ -4,12 +4,63 @@ Usage reference
 Everything the ``tmdl-preflight`` command accepts, plus the usage
 patterns that come up most: CI, scoping a run, and consuming
 machine-readable output. The rule catalog has its own page,
-:doc:`rules`.
+:doc:`rules`. This page describes version 1.2.1.
+
+Commands on this page are written once when they are the same in
+PowerShell and bash. Where they differ, both forms are shown. The
+PowerShell forms were not run when this page was written.
+
+Installing
+-------------
+
+``tmdl-preflight`` needs Python 3.10 or later and has no required
+runtime dependency. Install it from the release tag with pip, into a
+virtual environment:
+
+.. code-block:: text
+
+    pip install "tmdl-preflight @ git+https://github.com/C-Kapsalis/tmdl-preflight@v1.2.1"
+    tmdl-preflight --version
+
+.. code-block:: text
+
+    tmdl-preflight 1.2.1
+
+Or run it without installing, with `uv <https://docs.astral.sh/uv/>`_:
+
+.. code-block:: text
+
+    uvx --from git+https://github.com/C-Kapsalis/tmdl-preflight@v1.2.1 tmdl-preflight --version
+
+To work from a clone of the repository (the examples and the test
+suite live there), see :doc:`../tutorials/getting-started`.
+
+**PyYAML for YAML targets files.** ``manifest`` and ``refs`` read a
+targets file with ``--targets``. A ``.json`` targets file always
+works. A YAML targets file needs PyYAML, which is not installed with
+the package (the ``[test]`` extra of a clone install includes it).
+Install it next to the tool:
+
+.. code-block:: text
+
+    pip install PyYAML
+
+or, with uv:
+
+.. code-block:: text
+
+    uvx --with PyYAML --from git+https://github.com/C-Kapsalis/tmdl-preflight@v1.2.1 tmdl-preflight manifest <model> --targets targets.yml
+
+Without PyYAML, a YAML targets file is ignored and the tool prints no
+message about it: the run behaves as if ``--targets`` was not given.
+The same happens when the targets file does not exist or does not
+parse. So use a ``.json`` targets file, or install PyYAML, and check
+the path you pass.
 
 Command syntax
 -----------------
 
-::
+.. code-block:: text
 
     tmdl-preflight [--version] [--rules] <command> [options]
 
@@ -62,6 +113,9 @@ The command has sixteen subcommands.
    * - ``rules``
      - List the rule catalog.
 
+Every command prints its own help with ``--help``, for example
+``tmdl-preflight fix --help``.
+
 ``tmdl-preflight check <path>``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -74,8 +128,9 @@ never modifies a file.
    * - Option
      - Effect
    * - ``--select IDS``
-     - Comma-separated rule ids or names to run (default: all, or the
-       configuration's ``select``). Case-insensitive.
+     - Comma-separated rule ids or names to run (default: every rule
+       that is not opt-in, or the configuration's ``select``).
+       Case-insensitive.
    * - ``--ignore IDS``
      - Comma-separated rule ids or names to skip, in addition to the
        configuration's ``ignore``.
@@ -90,27 +145,41 @@ never modifies a file.
      - Fail only on violations not recorded in ``FILE``.
    * - ``--capture-floor FILE``
      - Write the ratchet floor of the selected rules to ``FILE`` and
-       print what was captured. The ratcheted rules are O007
-       ``dead-fact-tables``, R008 ``fact-conformed-dimension-join`` and
-       R016 ``dead-anchor-calendar``.
+       print what was captured. Two rules record a floor this way: R008
+       ``fact-conformed-dimension-join`` and R016
+       ``dead-anchor-calendar``. A selection with neither of them is a
+       usage error (exit ``2``). The O007 floor comes from
+       ``dead-facts --capture`` or ``baseline --capture-floors O007``.
    * - ``--config FILE``
      - Read the configuration from ``FILE`` instead of searching for
        one.
    * - ``--profile NAME``
-     - Merge the configuration's ``profiles.NAME`` table.
+     - Merge the configuration's ``profiles.NAME`` table. A name that
+       does not exist, or ``--profile`` with no configuration file, is
+       an error (exit ``2``).
    * - ``--no-config``
      - Ignore any configuration file.
+
+When ``--select`` names M003, M011, M013 or M017, the run also prints
+that rule's own console report before the findings. For M003 and M011
+under ``check``, that report reads as if it had repaired the files
+("Mode: LIVE", "Fixed ..."), but ``check`` writes nothing. Use
+``fix --dry-run`` to see what a repair would change.
 
 ``tmdl-preflight fix <path>``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Run every selected rule; for each fixable rule that reported
 violations, apply its auto-fix; then re-run every selected rule from
-disk and report what remains.
+disk and report what remains. ``fix`` edits files in place: run it on a
+clean Git working tree, or on a copy, so the change can be reviewed and
+undone.
 
 The exit code reflects the post-fix state: ``0`` means the re-check
 came back clean, ``1`` means violations survived the repair, or were
-never fixable in the first place.
+never fixable in the first place, and ``2`` means a fixer refused a
+repair it could not prove (the file is left unchanged and listed under
+``refused_fixes``; the other files are still repaired).
 
 ``fix`` takes every option ``check`` takes, and these:
 
@@ -131,7 +200,8 @@ never fixable in the first place.
        even on a single-model run.
    * - ``--check``
      - Write nothing; exit with the number of objects the selected
-       fixers would act on (capped at 255).
+       fixers would act on (capped at 255). A blanket ``fix --check``
+       does not count the objects of the unsafe fixers.
    * - ``--only {missing,invalid}``
      - Narrow the refresh-policy fixers: only add missing policies, or
        only realign invalid ones.
@@ -139,10 +209,30 @@ never fixable in the first place.
      - The refresh-policy fixer keeps the backlog entries of the tables
        it repaired.
 
-A fixer that is marked **unsafe** (D004, F016, P001 and R007) never
-runs in a blanket fix; the run says so on a ``not fixed  <RULE>:`` line
-and names the command that would apply it. Select the rule explicitly
-to run it.
+**Unsafe fixers.** Four fixers are marked unsafe, because their repair
+changes data or regenerates content: D004, F016, P001 and R007. A
+blanket ``fix`` (one that does not name the rule in ``--select``)
+never runs them. When the check reported findings that a skipped
+unsafe fixer repairs, the run says so on a line like this one, and the
+JSON payload lists the rule under ``skipped_fixers``:
+
+.. code-block:: text
+
+    not fixed  R007: its fixer can change data, so a blanket fix skips it; run 'fix --select R007' to apply it
+
+P001 is named for P001 findings and also for P002 findings, because
+its fixer adds the refresh policies P002 reports missing. A run with no
+such finding prints no ``not fixed`` line. (In 1.2.0, every blanket fix
+printed the R007 line, whether or not R007 had found anything.)
+
+To run an unsafe fixer, select its rule:
+
+.. code-block:: text
+
+    tmdl-preflight fix <path> --select R007
+
+R007 can also be opted into a blanket fix with its option
+``fix_autodetected_relationships = true`` (see :doc:`configuration`).
 
 ``tmdl-preflight baseline <path>``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -160,8 +250,9 @@ refuses ``--select``/``--ignore``. Details: :doc:`configuration`.
    * - Option
      - Effect
    * - ``--output FILE``
-     - The baseline file to write (default:
-       ``<path>/.tmdl-preflight-baseline.json``).
+     - The file to write (default:
+       ``<path>/.tmdl-preflight-baseline.json``; with
+       ``--capture-floors``, ``<path>/<rule>_floors.json``).
    * - ``--update``
      - Shrink an existing baseline to what still fails; never adds
        entries.
@@ -169,15 +260,20 @@ refuses ``--select``/``--ignore``. Details: :doc:`configuration`.
      - With ``--update``, also add today's new violations.
    * - ``--capture-floors RULE``
      - Record the floor file of a ratcheted rule (O007, R008 or R016)
-       from today's findings and write it out.
+       from today's findings and write it out. Without ``--output``
+       the file is ``<path>/o007_floors.json``, ``r008_floors.json`` or
+       ``r016_floors.json``.
+
+A floor file written by ``baseline --capture-floors`` or by
+``dead-facts --capture`` is JSON with sorted keys and LF line endings,
+on Windows too (1.2.1; 1.2.0 wrote CRLF on Windows).
 
 ``tmdl-preflight stats <path>``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Print an inventory of the project: tables, columns, measures,
-relationships (active, inactive, bidirectional), partitions by kind,
-calculation groups and items, field parameters, parameters,
-descriptions, display folders, lineage tags, report pages, visuals and
+relationships, partitions by kind, calculation groups and items, field
+parameters, descriptions, display folders, report pages, visuals and
 bookmarks. Counts only, no thresholds.
 
 .. list-table::
@@ -197,7 +293,8 @@ bookmarks. Counts only, no thresholds.
 ``tmdl-preflight dead-facts <path>``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-List the fact tables no measure reads. A fact table that only filter
+List the fact tables no measure reads, one ``<model>: <table>`` line
+each; a model with none prints nothing. A fact table that only filter
 sensors mention (``ISFILTERED``) or that only comments mention still
 counts as dead.
 
@@ -212,6 +309,8 @@ counts as dead.
        left out.
    * - ``--json``
      - Machine-readable output.
+   * - ``--config FILE`` / ``--profile NAME`` / ``--no-config``
+     - As for ``check``.
 
 ``tmdl-preflight comment-refs <path>``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -236,7 +335,10 @@ Count the ticket references in model comments (``#365``,
        for tightening.
    * - ``--tighten``
      - Lower the floors in ``FILE`` to today's counts. Never raises, and
-       drops the all-zero entries.
+       drops the all-zero entries. Needs ``--floors``; when the file
+       does not exist yet, it is seeded from the current scan.
+   * - ``--config FILE`` / ``--profile NAME`` / ``--no-config``
+     - As for ``check``.
 
 ``tmdl-preflight report <kind> <path>``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -275,7 +377,9 @@ Read-only reports. The kind is one of:
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Resolve the format a measure name gets from a format calculation group.
-The same evaluator backs the S005 rule.
+The same evaluator backs the S005 rule. When the model has no
+calculation-group table of that name, the command prints nothing and
+exits ``0``.
 
 .. list-table::
    :header-rows: 1
@@ -283,7 +387,7 @@ The same evaluator backs the S005 rule.
    * - Option
      - Effect
    * - ``--name NAME``
-     - The measure name (``SELECTEDMEASURENAME``).
+     - Required. The measure name (``SELECTEDMEASURENAME``).
    * - ``--table TABLE``
      - The calculation-group table (default: ``z-Selector Format``).
    * - ``--axis AXIS``
@@ -320,7 +424,9 @@ coverage gaps or the clean line.
      - Field-parameter tables whose ``NAMEOF`` rows expose columns
        (default: ``y-Selector`` and ``y-Plot Specific``).
    * - ``--check``
-     - Check the guard; exit 1 on a gap.
+     - Check the guard; exit 1 on a gap. Needs ``--guard-table``:
+       without it the command prints ``--check needs --guard-table``
+       and exits ``1``.
    * - ``--guard-table GUARD_TABLE``
      - With ``--check``: the table holding the guard.
    * - ``--guard-measure GUARD_MEASURE``
@@ -359,8 +465,18 @@ table to the categories its metric-axis measures reach.
 Move named rows from one category to another, across every file given.
 The move is all or nothing: a name that is not found live under the old
 category in any one of the files stops the whole run and writes nothing.
+The command edits the files in place.
 
-::
+PowerShell (the backtick continues the line):
+
+.. code-block:: powershell
+
+    tmdl-preflight fieldparam retag "y-Selector 2.tmdl" "y-Selector 3.tmdl" `
+        --names "Revenue" --from g_a --to g_b
+
+bash:
+
+.. code-block:: bash
 
     tmdl-preflight fieldparam retag "y-Selector 2.tmdl" "y-Selector 3.tmdl" \
         --names "Revenue" --from g_a --to g_b
@@ -371,12 +487,12 @@ category in any one of the files stops the whole run and writes nothing.
    * - Option
      - Effect
    * - ``--names NAMES``
-     - Row display name; comma-separated, or repeat the option for a
-       name that holds a comma.
+     - Required. Row display name; comma-separated, or repeat the
+       option for a name that holds a comma.
    * - ``--from OLD``
-     - The current category.
+     - Required. The current category.
    * - ``--to NEW``
-     - The new category.
+     - Required. The new category.
    * - ``--position POSITION``
      - 1-based row position of the category (default: 4).
 
@@ -386,9 +502,15 @@ category in any one of the files stops the whole run and writes nothing.
 Write a byte-stable JSON manifest of a model: the table roles, the
 columns with their warehouse origin through the Power Query renames,
 the measures, the warehouse table each partition reads, the
-relationships and the domains. The warehouse project and dataset the
-model declares are compared with an optional targets file; a mismatch
-exits 1 and writes nothing.
+relationships and the domains. ``<model>`` is a ``*.SemanticModel``
+folder, or an entry key of the targets file. The warehouse project and
+dataset the model declares are compared with the targets file when one
+is given; a mismatch exits 1 and writes nothing.
+
+The manifest lists the tables in the same order on every OS (1.2.1):
+1.2.0 sorted them differently on Windows, so a manifest committed from
+one OS read as stale under ``--check`` on the other. Regenerate a
+manifest written by 1.2.0 on Windows once.
 
 .. list-table::
    :header-rows: 1
@@ -399,9 +521,13 @@ exits 1 and writes nothing.
      - Output file (default:
        ``<model>/generated/<name>-manifest.json``).
    * - ``--check``
-     - Write nothing; exit 1 when the file is missing or stale.
+     - Write nothing; exit 1 when the file is missing (``MISSING:``)
+       or stale (``DRIFT:``), 0 with ``OK: ... is up to date.``
    * - ``--targets TARGETS``
-     - The target contract file (YAML or JSON).
+     - The target contract file, JSON or YAML (YAML needs PyYAML; see
+       `Installing`_).
+   * - ``--config FILE`` / ``--profile NAME`` / ``--no-config``
+     - As for ``check``.
 
 ``tmdl-preflight schema-check``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -459,7 +585,25 @@ from SQL files and exits **3** when an entry is held.
 
 Count the anchored references to a name, model side and report side,
 live and archived. Run it before a rename or a delete, to see the blast
-radius.
+radius. ``<name>`` is exact and case-sensitive; the paths to scan
+default to the current folder.
+
+.. code-block:: text
+
+    tmdl-preflight refs Revenue examples/bike-shop-clean --files
+
+.. code-block:: text
+
+
+    References to "Revenue"  (matched as `[Revenue]`, `"Revenue"` or `"Table.Revenue"`)
+
+      LIVE      model     4   report     0   total     4   files 2
+      non-live  model     0   report     0   total     0   files 0
+
+      Live blast radius: 4 reference(s).
+
+         2  live     model  BikeShop.SemanticModel/definition/tables/Metric Selector.tmdl
+         2  live     model  BikeShop.SemanticModel/definition/tables/Sales Measures.tmdl
 
 .. list-table::
    :header-rows: 1
@@ -477,14 +621,15 @@ radius.
        over-counts).
    * - ``--targets TARGETS``
      - The target contract file: the live set is the registered model
-       paths.
+       paths. JSON or YAML (YAML needs PyYAML; see `Installing`_).
 
 ``tmdl-preflight live <model>``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The only command that touches the network. It checks the published
 dataset over the Power BI REST API, and is opt-in: nothing else in the
-tool needs a credential.
+tool needs a credential. ``<model>`` is the local ``*.SemanticModel``
+folder.
 
 .. list-table::
    :header-rows: 1
@@ -515,6 +660,8 @@ tool needs a credential.
      - Never open a sign-in prompt (service principal only).
    * - ``--cache-ttl CACHE_TTL``
      - Seconds to cache dataset metadata (default: 300).
+   * - ``--config FILE`` / ``--profile NAME`` / ``--no-config``
+     - As for ``check``.
 
 The check ids are ``live-refresh-status``, ``live-freshness``,
 ``live-table-sample``, ``live-dimension-rows``, ``live-measure-sample``,
@@ -526,15 +673,34 @@ The check ids are ``live-refresh-status``, ``live-freshness``,
 ``live-bpa``. An outcome is pass, warn, fail, skip or error; the
 command exits 1 on a fail or an error, and on a warn with ``--strict``.
 The dataset name must match the local model folder unless
-``--expect-name`` or ``--no-coupling-check`` is given.
+``--expect-name`` or ``--no-coupling-check`` is given. With no
+workspace or dataset id (neither the option nor the environment
+variable), the command exits ``2``.
+
+Set the environment variables for one session like this.
+
+PowerShell:
+
+.. code-block:: powershell
+
+    $env:FABRIC_WORKSPACE_ID = "<workspace id>"
+    $env:FABRIC_MODEL_ID = "<dataset id>"
+
+bash:
+
+.. code-block:: bash
+
+    export FABRIC_WORKSPACE_ID="<workspace id>"
+    export FABRIC_MODEL_ID="<dataset id>"
 
 ``tmdl-preflight rules``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Print the rule catalog: id, name, severity, fixability, description.
-``--json`` emits it as a JSON array, including ``baselinable``,
-``safe``, ``opt_in`` and the rule's ``options``. The top-level flag
-``tmdl-preflight --rules`` is an alias.
+Print the rule catalog: id, name, severity, ``auto-fixable`` or
+``check-only``, the description, and ``(opt-in)`` on the rules that
+run only when named. ``--json`` emits it as a JSON array, including
+``baselinable``, ``safe``, ``opt_in`` and the rule's ``options``. The
+top-level flag ``tmdl-preflight --rules`` is an alias.
 
 .. list-table::
    :header-rows: 1
@@ -547,10 +713,10 @@ Print the rule catalog: id, name, severity, fixability, description.
      - The catalog format. ``markdown`` renders the generated catalog
        page.
    * - ``--out FILE``
-     - Write the catalog to ``FILE``.
+     - Write the catalog to ``FILE`` (``--format markdown`` only).
    * - ``--check``
-     - With ``--out``: fail if ``FILE`` is missing or stale; write
-       nothing.
+     - With ``--out``: fail (exit ``1``) if ``FILE`` is missing or
+       stale; write nothing.
 
 The catalog page the tool generates is the reference for every rule:
 :doc:`rules`.
@@ -579,7 +745,8 @@ The catalog page the tool generates is the reference for every rule:
      - the bookmark files it holds
 
 Multiple models or reports under one root are all checked in a single
-run.
+run. Archived copies under the root are skipped by default; see
+:doc:`configuration` (``exclude``).
 
 Exit codes
 -------------
@@ -598,76 +765,105 @@ Exit codes
        found there, an unknown rule id or name was given to
        ``--select``/``--ignore``, the selection leaves zero rules to
        run, the configuration is invalid, the baseline file is missing
-       or malformed, or ``baseline`` refused to write
+       or malformed, or ``baseline`` refused to write. Also ``fix``
+       when a fixer refused a repair it could not prove.
    * - ``3``
      - ``schema-check`` only: an entry was held in the SQL exposure
        mode
 
+``fix --check`` is the exception: it exits with the number of objects
+the fixers would act on.
+
 Text output format
 ----------------------
 
-::
+.. code-block:: text
 
     <file>:<line>  <RULE> <severity>: <message> [<object>] (auto-fixable)
 
-Files are shown relative to the checked path when possible. A run
-prints, in this order:
+Files are shown relative to the checked path when possible, with the
+path separator of the OS (backslashes on Windows). A run prints, in
+this order:
 
-1. the findings, one per line;
-2. the ``fixed  <RULE>: <description>`` line of every applied repair
-   (``fix`` only), and a ``not fixed  <RULE>: <reason>`` line for every
-   fixer a blanket ``fix`` skipped because it is unsafe;
-3. a blank line, then the ``scanned:`` line: how many models, tables,
-   columns, measures, relationships and DAX expressions the run looked
-   at;
-4. the console report: the notes a rule printed for itself, as blocks
-   headed by the rule id (``DAX Validation Summary:``, ``R001:``,
-   ``R002:`` ... ``R014:``);
-5. the final ``tmdl-preflight:`` summary line;
-6. on a ``fix``, the note the fixer printed for itself, after the
-   summary line.
+1. on a ``fix``, the notes the fixers printed while they worked (for
+   example R007's ``Found 1 autodetected relationships:``), then a
+   blank line;
+2. on a ``fix``, the ``fixed  <RULE>: <description>`` line of every
+   applied repair, a ``would fix  <RULE>:`` line per rule for a dry
+   run, a ``refused  ...`` line for every repair a fixer could not
+   prove, and a ``not fixed  <RULE>:`` line for every unsafe fixer the
+   run skipped while its findings were reported; then a blank line;
+3. the findings, one per line (a rule may print a message that runs
+   over more than one line);
+4. a blank line, then the ``scanned:`` line: how many models, tables,
+   columns, measures, relationships, DAX expressions, reports and
+   bookmarks the run looked at;
+5. the console report and the notes: the blocks some rules print for
+   themselves (``DAX Validation Summary:``, ``R001:``, ``R002:`` ...
+   ``R014:``), then the notes on skipped rules, exclusions, exemptions
+   and the baseline;
+6. the final ``tmdl-preflight:`` summary line;
+7. on a ``fix``, the closing advice a fixer printed, after the summary
+   line.
 
 JSON output format
 -----------------------
 
-::
+This is the real output of
+``tmdl-preflight check examples/bike-shop-broken --select M003 --json``,
+run in a clone of the tool's repository:
+
+.. code-block:: json
 
     {
       "summary": {
-        "errors": 0,
+        "errors": 1,
         "warnings": 0,
         "infos": 0,
-        "fixes_applied": 1,
+        "fixes_applied": 0,
         "excluded": 0,
         "excluded_files": 0,
-        "files_scanned": 12,
+        "files_scanned": 15,
         "exempted": 0,
         "baselined": 0
       },
-      "fixes": ["M003: Stores.tmdl:3 (table Stores): '...' -> '...'"],
+      "fixes": [],
       "skipped": [],
       "skip_reasons": {},
       "skipped_fixers": [],
       "would_fix": [],
       "refused_fixes": [],
-      "notes": ["DAX Validation Summary: ..."],
+      "notes": [],
       "fix_notes": [],
       "blocks": [],
       "violations": [
         {
           "rule": "M003",
           "severity": "error",
-          "message": "...",
-          "file": "...",
+          "message": "Duplicate lineageTag 'e689596a-59ea-4b2c-a14d-48596a7b8c9d' found in files: Products.tmdl, Stores.tmdl. The tag on line 3 (table Products) is the one that keeps it; the copy on line 3 (table Stores) is regenerated by the auto-fix.",
+          "file": "examples/bike-shop-broken/BikeShop.SemanticModel/definition/tables/Stores.tmdl",
           "line": 3,
           "object": "table Stores",
           "fixable": true,
           "path": "BikeShop.SemanticModel/definition/tables/Stores.tmdl"
         }
       ],
-      "scanned": {"files": 12, "models": 1, "tables": 6, "columns": 22,
-                  "measures": 6, "relationships": 4, "dax_blocks": 8,
-                  "...": "..."}
+      "scanned": {
+        "files": 15,
+        "models": 1,
+        "tables": 6,
+        "columns": 22,
+        "measures": 6,
+        "relationships": 4,
+        "dax_blocks": 8,
+        "calculation_groups": 0,
+        "expressions": 0,
+        "tmdl_files": 9,
+        "reports": 1,
+        "pages": 1,
+        "visuals": 0,
+        "bookmarks": 0
+      }
     }
 
 .. list-table::
@@ -678,8 +874,9 @@ JSON output format
    * - ``summary``
      - The counts. ``errors``, ``warnings`` and ``infos`` are the
        findings by severity; ``fixes_applied`` the repairs; ``excluded``
-       the excluded violations; ``excluded_files`` the files the
-       ``exclude`` globs dropped; ``files_scanned`` the files the run
+       the excluded violations plus the excluded files;
+       ``excluded_files`` the files the ``exclude`` globs (or the
+       default exclusions) dropped; ``files_scanned`` the files the run
        looked at; ``exempted`` and ``baselined`` the findings an
        exemption or a baseline accepted.
    * - ``fixes``
@@ -689,8 +886,8 @@ JSON output format
    * - ``skip_reasons``
      - Why each skipped rule was skipped, keyed by the rule's name.
    * - ``skipped_fixers``
-     - The fixers a blanket ``fix`` did not run, because they are
-       unsafe. The ids of the rules.
+     - The ids of the unsafe fixers a blanket ``fix`` did not run while
+       their findings were reported.
    * - ``would_fix``
      - What a dry run would change.
    * - ``refused_fixes``
@@ -701,18 +898,18 @@ JSON output format
    * - ``fix_notes``
      - The notes the fixers printed.
    * - ``blocks``
-     - The console blocks a rule appended during the run, in the order
-       they were produced.
+     - The closing advice the fixers printed, in the order it was
+       produced.
    * - ``violations``
      - The findings of the final state of the run (post-fix for
        ``fix``).
    * - ``scanned``
      - What the run looked at.
 
-``violations`` reflects the final state of the run (post-fix for
-``fix``). ``path`` is project-relative (it starts at the
-``*.SemanticModel`` or ``*.Report`` folder), the same identity
-baselines and exemptions use. When they apply, the payload also has an
+``file`` is the path as the run saw it; ``path`` is project-relative
+(it starts at the ``*.SemanticModel`` or ``*.Report`` folder, with
+forward slashes on every OS), the same identity baselines and
+exemptions use. When they apply, the payload also has an
 ``exemptions`` object (applied, expired, unused) and a ``baseline``
 object (suppressed, fixed, stale). The payload grew its top-level keys
 in 1.1.0 and again in 1.2.0, without changing the earlier ones.
@@ -733,8 +930,8 @@ DevOps, and gating on a baseline.
 Scoping a run
 ~~~~~~~~~~~~~~~~~
 
-- Check one model in a multi-model repo: pass the specific folder,
-  ``tmdl-preflight check src/Finance.SemanticModel``.
+- Check one model in a multi-model repository: pass the specific
+  folder, ``tmdl-preflight check src/Finance.SemanticModel``.
 - Silence an advisory rule that does not apply to your architecture,
   for example S001 in a model that formats via calculation groups:
   ``tmdl-preflight check . --ignore S001``, or ``ignore = ["S001"]`` in
@@ -742,16 +939,14 @@ Scoping a run
 - Gate on a subset while cleaning up legacy debt:
   ``tmdl-preflight check . --select M002,M003,D001,R001``, or record a
   baseline and fail only on new violations (see :doc:`configuration`).
-- Apply every safe repair in one pass, before cutting a release branch,
-  without being distracted by advisory findings:
+- Apply every safe repair in one pass, before cutting a release branch:
   ``tmdl-preflight fix MyProject/``. A blanket fix runs the twenty-one
   safe fixers and skips the four unsafe ones (D004, F016, P001 and
-  R007), naming each on a ``not fixed  <RULE>:`` line. To repair one of
-  those too, select it: ``tmdl-preflight fix MyProject/ --select
-  R007``. Preview first with ``--dry-run``; every line marked
-  ``(auto-fixable)`` under ``check`` is one the subsequent ``fix`` will
-  touch. Commit the fixes as their own commit, "apply tmdl-preflight
-  auto-fixes," so reviewers can wave it through quickly.
+  R007). Preview first with ``--dry-run``; every line marked
+  ``(auto-fixable)`` under ``check`` belongs to a rule with a fixer,
+  and the ``would fix`` lines say what a real run would repair. Commit
+  the fixes as their own commit, "apply tmdl-preflight auto-fixes," so
+  reviewers can wave it through quickly.
 - See what a repair would do before it does it:
   ``tmdl-preflight fix MyProject/ --dry-run --verbose``.
 
@@ -764,9 +959,13 @@ Consuming JSON output
 
 For annotations or dashboards, use ``--json`` and parse the payload:
 
-::
+.. code-block:: text
 
-    $ tmdl-preflight check . --json > preflight.json
+    tmdl-preflight check . --json > preflight.json
+
+In Windows PowerShell 5.1, ``>`` writes UTF-16; to get a UTF-8 file
+there, pipe to ``Out-File -Encoding utf8`` instead. PowerShell 7 writes
+UTF-8 with ``>``.
 
 Exit codes are unchanged under ``--json``: ``0`` clean, ``1``
 violations, ``2`` usage or path errors, so a missing model folder fails

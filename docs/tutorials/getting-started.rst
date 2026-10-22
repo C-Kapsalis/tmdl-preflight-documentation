@@ -1,107 +1,219 @@
 Tutorial: getting started
 ============================
 
-In this tutorial you open a broken semantic model, watch it fail in
-Power BI Desktop, then use ``tmdl-preflight`` to find and repair every
-blocker until it opens clean. It takes about ten minutes and assumes a
-working Python 3.10 or later installation. Opening the model yourself,
-steps 1 and 6, needs Power BI Desktop, which needs Windows; every
-other step runs on whatever platform runs Python, since the CLI reads
-and writes plain TMDL text files directly.
+In this tutorial you install ``tmdl-preflight`` 1.2.1, check two copies
+of a small example model, repair the broken copy with ``fix``, and read
+what the tool leaves for you to decide. It takes about ten minutes.
 
-1. Open the broken model, and watch it fail
--------------------------------------------------
+You need Git and Python 3.10 or later. Every step runs on Windows,
+macOS and Linux, because the tool reads and writes plain TMDL and JSON
+files. Where a command differs between shells, the page shows it for
+PowerShell and for bash. Power BI Desktop is optional: the steps that
+mention it are for readers on Windows who want to compare the files with
+what Desktop does.
+
+.. note::
+
+   The output on this page was captured with bash on macOS. On Windows
+   the text report prints file paths with backslashes. The PowerShell
+   commands were not run, and no Windows output was captured, when this
+   page was written.
+
+1. Install
+------------
+
+Clone the repository at the ``v1.2.1`` tag, create a virtual
+environment, and install the package from the clone. The ``[test]``
+extra adds pytest, which the how-to guides use, and PyYAML, which lets
+``manifest`` and ``refs`` read a targets file written in YAML.
+
+PowerShell:
+
+.. code-block:: powershell
+
+    git clone --branch v1.2.1 https://github.com/C-Kapsalis/tmdl-preflight.git
+    cd tmdl-preflight
+    python -m venv .venv
+    .venv\Scripts\Activate.ps1
+    pip install -e ".[test]"
+
+bash:
+
+.. code-block:: bash
+
+    git clone --branch v1.2.1 https://github.com/C-Kapsalis/tmdl-preflight.git
+    cd tmdl-preflight
+    python3 -m venv .venv
+    source .venv/bin/activate
+    pip install -e ".[test]"
+
+Git reports a "detached HEAD" after cloning a tag; that is expected. On
+Windows, if ``python`` is not on the path, the Python launcher ``py``
+runs the same command (``py -m venv .venv``). If PowerShell refuses to
+run the activation script, see the :mod:`venv` documentation for the
+execution-policy setting it needs.
+Every command after this one runs from the ``tmdl-preflight`` folder,
+with the virtual environment active.
+
+Confirm the console command is on the path:
+
+.. code-block:: text
+
+    tmdl-preflight --version
+
+.. code-block:: text
+
+    tmdl-preflight 1.2.1
+
+2. Meet the example models
+------------------------------
 
 The repository ships two copies of a small fictional PBIP project, the
 Pedal and Sprocket Bike Co. model, under ``examples/``:
 ``bike-shop-clean`` (the model as it should be) and
-``bike-shop-broken`` (the same model, seeded with defects). Open
-``examples/bike-shop-broken/BikeShop.pbip`` in Power BI Desktop.
+``bike-shop-broken`` (the same model, seeded with defects).
 
-It does not open. The seeded defect that stops it is a duplicate
-``lineageTag``: ``Stores`` carries the tag ``Products`` already has, and
-Desktop refuses the project outright ("Failed to add a deserialized
-Table object into the model ... An object with lineage-tag '...' already
-exists in the collection"). That is the kind of thing that sails past a
-code review, since nothing in a diff looks wrong, but stops Power BI
-Desktop cold. The error Desktop shows is generic, and in some cases
-there is no error at all: the file just hangs on load and the report
-never opens. Either way, nothing names the file, the table, or the
-fix. That is the gap ``tmdl-preflight`` closes.
+The tool's release notes record what Power BI Desktop (Windows,
+installer build) did with copies of this model that carried one defect
+each:
 
-The other seeded defects behave differently, and the tool's own release
-notes record what Desktop did with each of them on a Windows bench: a
-missing ``ref table`` line (M006) still loads, and a field-parameter
-orphan comma (F001) opens the model but breaks every visual that uses
-the field parameter. Only the duplicate tag stops the project opening.
+- a duplicate ``lineageTag``: Desktop refused to open the model ("Failed
+  to add a deserialized Table object into the model ... An object with
+  lineage-tag '...' already exists in the collection.");
+- a table file with no ``ref table`` line: Desktop opened the model and
+  loaded the table;
+- an orphan comma in a field parameter: Desktop opened the model, but
+  every visual that uses the field parameter failed ("Error fetching
+  data for this visual.").
 
-2. Install
--------------
-
-Clone the repository, then install the package in editable mode from
-inside it (the ``[test]`` extra pulls in pytest, which the how-to
-guides also use):
-
-::
-
-    $ git clone https://github.com/c-kapsalis/tmdl-preflight.git
-    $ cd tmdl-preflight
-    $ pip install -e ".[test]"
-
-Confirm the console command is on the path:
-
-::
-
-    $ tmdl-preflight --version
-
-::
-
-    tmdl-preflight 1.2.0
+If you have Power BI Desktop, you can open
+``examples/bike-shop-broken/BikeShop.pbip`` and compare. A duplicate tag
+is easy to miss in review, because nothing in the diff looks wrong. The
+tool names the file, the line, the rule and the repair.
 
 3. Check the clean model
 ----------------------------
 
-``check`` is strictly read-only; point it at a project root, a
-``*.SemanticModel`` folder, a ``definition`` folder, or a
-``*.Report`` folder:
+``check`` is read-only. Point it at a project root, a
+``*.SemanticModel`` folder, a ``definition`` folder or a ``*.Report``
+folder:
 
-::
+.. code-block:: text
 
-    $ tmdl-preflight check examples/bike-shop-clean
+    tmdl-preflight check examples/bike-shop-clean
 
-The model and the report both pass every rule. The run reports two info
-findings:
+This is the whole output:
 
-::
+.. code-block:: text
 
     BikeShop.SemanticModel/definition/tables/Sales Measures.tmdl:26  M017 info: Line 26: Multiline DAX should use triple backticks
     BikeShop.SemanticModel/definition/tables/__Calendar.tmdl  R013 info: calendar __Calendar has no Year, Quarter, Month, Week, Day column(s). [__Calendar]
 
     scanned: 1 model, 6 tables, 22 columns, 6 measures, 4 relationships, 8 DAX expressions, 1 report
-    (the run then prints its console report: the DAX validation summary
-    and the R001, R002, R004, R005, R009, R010, R012, R013 and R014 blocks)
+    DAX Validation Summary:
+       Total expressions: 6
+       Valid: 6 (100.0%)
+       Invalid: 0 (0.0%)
+    R001: BikeShop.SemanticModel
+    Validated 4 relationships
+       Errors: 0
+       Warnings (inactive): 1
+       Success rate: 100.0%
+    Inactive: Sales -> __Calendar
+    R002: BikeShop.SemanticModel
+    Cardinality Distribution:
+       many_to_one            4
+    R004: BikeShop.SemanticModel
+    Cross-filtering Analysis:
+       Unidirectional: 4
+       Bidirectional: 0
+    Bidirectional count is acceptable (<=3)
+    R005: BikeShop.SemanticModel
+    Total tables: 6
+    With relationships: 4
+    Orphans: 2
+
+    Orphan Categories:
+       - Plot Specific tables: 0
+       - Selector tables: 1
+       - Measure tables: 1
+       - Other: 0
+
+    Expected orphans (Plot Specific/Selector/Measure): 2
+    Unexpected orphans: 0
+    R009: BikeShop.SemanticModel
+    Found 4 relationships (3 active, 1 inactive)
+    R010: BikeShop.SemanticModel
+    Circular Dependency Analysis:
+       Active relationships checked: 3
+       Tables in graph: 1
+       Cycles detected: 0
+    R012: BikeShop.SemanticModel
+    Calendar Relationship Cardinality:
+    Total calendar relationships: 2
+    Valid (many-to-one): 2
+    Invalid cardinality: 0
+    R013: BikeShop.SemanticModel
+    Calendar Table Completeness:
+    Total columns: 5
+    Standard columns present: 1/6
+
+    Present standard columns:
+      - Date
+
+    Advisory - Missing standard columns:
+      - Year
+      - Quarter
+      - Month
+      - Week
+      - Day
+
+    These columns are recommended for complete date hierarchies.
+
+    Additional columns (4):
+      - Calendar Month
+      - Calendar Month Name
+      - Calendar Quarter
+      - Calendar Year
+    R014: BikeShop.SemanticModel
+    Total dimension tables (_prefix): 1
+    With key columns: 1 (100.0%)
+    Without apparent keys: 0
+
+    All dimension tables have key columns matching the canonical patterns.
     No .bookmark.json files found under examples/bike-shop-clean
     tmdl-preflight: 0 error(s), 0 warning(s), 2 info(s)
 
-The ``scanned:`` line says how much of the project the run looked at,
-so a run that silently found nothing to check is obvious. The run exits
-``0``.
+The report has five parts, in this order:
 
-The two findings are info, and they are the two the example is meant to
-carry: M017, a measure whose multi-line DAX is not fenced, and R013, a
-calendar without the usual year/quarter/month levels. Neither stops
-Desktop opening the model.
+- the findings, one per line: file, line where there is one, rule id,
+  severity and message, then the object in brackets;
+- the ``scanned:`` line, which says how much of the project the run
+  looked at, so a run that silently found nothing to check is obvious;
+- the console report: blocks some rules print for themselves (the DAX
+  validation summary, then the R001 to R014 blocks);
+- notes such as the one about bookmark files;
+- the summary line.
+
+The two findings are info, and they are the two the example is meant
+to carry: M017, a measure whose multi-line DAX is not fenced with
+triple backticks, and R013, a calendar without the usual
+year, quarter and month columns. Info findings never fail a run, so the
+command exits ``0``. To see the exit code, run ``$LASTEXITCODE`` in
+PowerShell or ``echo $?`` in bash right after the command.
 
 4. Check the broken model
 -----------------------------
 
-::
+.. code-block:: text
 
-    $ tmdl-preflight check examples/bike-shop-broken
+    tmdl-preflight check examples/bike-shop-broken
 
-Seven findings come back — the four seeded defects and three notes:
+Seven findings come back: the four seeded defects and three notes. The
+console report is the same as in step 3 and is cut here (the ``...``
+line):
 
-::
+.. code-block:: text
 
     BikeShop.SemanticModel/definition/tables/Metric Selector.tmdl:45  F001 error: 1 orphan comma(s). Power BI Desktop still opens the model, but every visual that uses this table fails ('Error fetching data for this visual'). Delete the orphan comma(s) (the auto-fix does). [Metric Selector (field-parameter file)] (auto-fixable)
     BikeShop.SemanticModel/definition/tables/Sales Measures.tmdl:21  S001 info: visible measure has no formatString, so it renders with the engine's default formatting. Add a formatString, or run with --ignore S001 if your formatting strategy lives elsewhere. [Sales Measures[Units Sold]]
@@ -112,147 +224,220 @@ Seven findings come back — the four seeded defects and three notes:
     BikeShop.SemanticModel/definition/tables/__Calendar.tmdl:4  M004 warning: LineageTag 'calendar-tag-TODO' is not a canonically-formatted UUID (expected 8-4-4-4-12 hex). Power BI rejects a tag it cannot read; the auto-fix writes a fresh one. [table __Calendar] (auto-fixable)
 
     scanned: 1 model, 6 tables, 22 columns, 6 measures, 4 relationships, 8 DAX expressions, 1 report
-    (the run then prints its console report: the DAX validation summary
-    and the R001, R002, R004, R005, R009, R010, R012, R013 and R014 blocks)
+    ...
     No .bookmark.json files found under examples/bike-shop-broken
     tmdl-preflight: 2 error(s), 2 warning(s), 3 info(s)
 
-Exit code 1. Every line names the file, the line where one exists, the
-rule id, the severity, and what is wrong; where the tool can repair it,
-an ``(auto-fixable)`` marker:
+The exit code is ``1``, because there are errors. Where the tool can
+repair a finding, the line ends with ``(auto-fixable)``:
 
-- **M003**: ``Stores`` copied ``Products``' ``lineageTag``. This is the
-  exact defect that stopped Desktop from opening the project, and the
-  one that survives review because nothing in the diff looks wrong.
-- **F001**: a deleted field-parameter row left an orphan comma behind,
-  so the calculated partition source no longer parses. Desktop still
-  opens the model, but every visual that uses the field parameter fails.
-- **M006**: ``Stores`` is defined under ``tables/`` but has no ``ref
-  table`` line, so ``model.tmdl`` is out of step with ``tables/``. This
-  is a **warning**, not a blocker: Desktop still loads the table, and
-  the fixer adds the missing line anyway.
-- **M004**: ``__Calendar``'s ``lineageTag`` is a ``TODO`` placeholder,
-  not a UUID.
-- **S001**: the visible measure ``Units Sold`` has no ``formatString``.
-  An advisory nudge, not a blocker; it does not stop the model from
-  opening.
-- **M017** and **R013**: two info findings about a multi-line DAX body
-  and a calendar without the usual levels.
+- **M003** (error): ``Stores`` carries the ``lineageTag`` that
+  ``Products`` already has. This is the defect that stopped Desktop from
+  opening the model on the bench.
+- **F001** (error): a deleted field-parameter row left an orphan comma
+  behind, so the calculated partition source no longer parses.
+- **M006** (warning): ``Stores`` is defined under ``tables/`` but has no
+  ``ref table`` line, so ``model.tmdl`` is out of step with ``tables/``.
+  Desktop still loaded the table on the bench; the fixer adds the line
+  anyway.
+- **M004** (warning): the ``lineageTag`` of ``__Calendar`` is the
+  placeholder ``calendar-tag-TODO``, not a UUID. The release notes
+  record that Desktop opened a copy whose only defect was this
+  placeholder; the fixer replaces it with a fresh UUID.
+- **S001** (info): the visible measure ``Units Sold`` has no
+  ``formatString``.
+- **M017** and **R013** (info): the same two notes as in the clean
+  model.
 
-Four findings carry the ``(auto-fixable)`` marker: F001, M006, M003 and
-M004. The other three do not. That split is deliberate: a defect earns
-an auto-fix only when the failure itself fully determines the repair.
+Four findings are auto-fixable: F001, M006, M003 and M004. The other
+three are not. A defect gets a fixer only when the failure itself
+determines the repair; how ``Units Sold`` should be formatted is your
+decision.
 
 5. Fix a copy
 ----------------
 
-``fix`` edits files in place, so work on a copy and keep the broken
-original for rereading this tutorial:
+``fix`` edits files in place. Copy the broken model first, so the
+original stays as it is (if ``../bike-shop`` is left over from an
+earlier run, delete it first):
 
-::
+PowerShell:
 
-    $ cp -r examples/bike-shop-broken /tmp/bike-shop
-    $ tmdl-preflight fix /tmp/bike-shop
+.. code-block:: powershell
 
-Four fixers run, then the re-check reports what remains:
+    Copy-Item -Recurse examples/bike-shop-broken ../bike-shop
 
-::
+bash:
+
+.. code-block:: bash
+
+    cp -r examples/bike-shop-broken ../bike-shop
+
+Then run the fixers on the copy:
+
+.. code-block:: text
+
+    tmdl-preflight fix ../bike-shop
+
+Four fixers run, then the re-check reports what remains (the console
+report is cut again):
+
+.. code-block:: text
 
     fixed  M006: model.tmdl: + ref table Stores
-    fixed  M003: Stores.tmdl:3 (table Stores): 'e689596a-59ea-4b2c-a14d-48596a7b8c9d' -> '91232640-8fc3-4547-9f7a-b32beb0b4d0f'
-    fixed  M004: __Calendar.tmdl:4 (table __Calendar): 'calendar-tag-TODO' -> '4ddb8fa0-44ca-444c-9d59-b1744dad3fd2'
+    fixed  M003: Stores.tmdl:3 (table Stores): 'e689596a-59ea-4b2c-a14d-48596a7b8c9d' -> 'cad85256-6367-4144-9e87-10018d08f1ce'
+    fixed  M004: __Calendar.tmdl:4 (table __Calendar): 'calendar-tag-TODO' -> '06374f8f-6015-4152-a527-e555a357cc6f'
     fixed  F001: Metric Selector.tmdl: removed 1 orphan comma(s)
-    not fixed  R007: its fixer can change data, so a blanket fix skips it; run 'fix --select R007' to apply it
 
     BikeShop.SemanticModel/definition/tables/Sales Measures.tmdl:21  S001 info: visible measure has no formatString, so it renders with the engine's default formatting. Add a formatString, or run with --ignore S001 if your formatting strategy lives elsewhere. [Sales Measures[Units Sold]]
     BikeShop.SemanticModel/definition/tables/Sales Measures.tmdl:25  M017 info: Line 25: Multiline DAX should use triple backticks
     BikeShop.SemanticModel/definition/tables/__Calendar.tmdl  R013 info: calendar __Calendar has no Year, Quarter, Month, Week, Day column(s). [__Calendar]
 
     scanned: 1 model, 6 tables, 22 columns, 6 measures, 4 relationships, 8 DAX expressions, 1 report
-    (the run then prints its console report: the DAX validation summary
-    and the R001, R002, R004, R005, R009, R010, R012, R013 and R014 blocks)
-    No .bookmark.json files found under /tmp/bike-shop
+    ...
+    No .bookmark.json files found under ../bike-shop
     tmdl-preflight: 0 error(s), 0 warning(s), 3 info(s), 4 fix(es) applied
 
     Removed 1 orphan comma(s) across 1 file(s). Commit the changes and re-sync the affected workspace(s).
 
-(The regenerated UUIDs are random; yours will differ.) Three things
-happened, in order: every rule ran (``check``); the fixers of the
-rules that failed ran, editing files on disk; then every rule ran
-**again**, from disk, and the report above is that re-check. The exit
-code is ``0``: the re-check finds no errors and no warnings, and
-``fix`` reports the state of the run rather than hiding it. The
-``not fixed  R007:`` line is the other half of that honesty: R007's
-fixer deletes relationship blocks, so it is unsafe and never runs in a
-blanket fix. Diff the copy against ``examples/bike-shop-broken``
-before moving on: every auto-fix is a one-line, or one-value, change.
+The regenerated UUIDs are random, so yours will differ. Three things
+happened, in order: every rule ran (the check); the fixers of the rules
+that reported findings ran and edited the files on disk; then every
+rule ran again, from disk, and the report above is that re-check. The
+exit code is ``0``: the re-check finds no errors and no warnings. The
+last line is the closing advice the F001 fixer prints after the summary.
 
-6. Open the repaired copy
------------------------------
+Four fixers are marked unsafe (D004, F016, P001 and R007) and never run
+in a plain ``fix``. When the check reports a finding that one of them
+repairs, the run says so on a ``not fixed  <RULE>:`` line and names the
+command that applies it. This model has no such finding, so no such
+line appears.
 
-Open ``/tmp/bike-shop/BikeShop.pbip`` in Power BI Desktop. Nothing was
-guessed on your behalf; every change above is one you can read in a
-two-line diff: ``Stores`` is attached to the model again, the calendar
-and duplicate lineage tags are resolved, and the ``Metric Selector``
-field parameter loads without a parse error. Opening the ``.pbip`` in
-Power BI Desktop is a manual step that has not been done by the tool:
-what the tool proves is that the four defects it repaired are gone
-from the files.
+See exactly what changed. Git compares two folders outside a
+repository with ``--no-index``; the command is the same in PowerShell
+and bash:
+
+.. code-block:: text
+
+    git diff --no-index examples/bike-shop-broken ../bike-shop
+
+.. code-block:: text
+
+    diff --git a/examples/bike-shop-broken/BikeShop.SemanticModel/definition/model.tmdl b/../bike-shop/BikeShop.SemanticModel/definition/model.tmdl
+    index 836c6a7..57ae811 100644
+    --- a/examples/bike-shop-broken/BikeShop.SemanticModel/definition/model.tmdl
+    +++ b/../bike-shop/BikeShop.SemanticModel/definition/model.tmdl
+    @@ -19,3 +19,4 @@ ref table Sales
+     ref table 'Sales Measures'
+     ref table 'Metric Selector'
+
+    +ref table Stores
+    diff --git a/examples/bike-shop-broken/BikeShop.SemanticModel/definition/tables/Metric Selector.tmdl b/../bike-shop/BikeShop.SemanticModel/definition/tables/Metric Selector.tmdl
+    index d92805a..2f7bbac 100644
+    --- a/examples/bike-shop-broken/BikeShop.SemanticModel/definition/tables/Metric Selector.tmdl
+    +++ b/../bike-shop/BikeShop.SemanticModel/definition/tables/Metric Selector.tmdl
+    @@ -43,7 +43,7 @@ table 'Metric Selector'
+     				{
+     				    ( "Revenue", NAMEOF ( [Revenue] ), 0 ),
+     				    ( "Orders #", NAMEOF ( [Orders #] ), 1 ),
+    -				    ,
+    +				    
+     				    ( "Units Sold", NAMEOF ( [Units Sold] ), 3 )
+     				}
+
+    diff --git a/examples/bike-shop-broken/BikeShop.SemanticModel/definition/tables/Stores.tmdl b/../bike-shop/BikeShop.SemanticModel/definition/tables/Stores.tmdl
+    index 24cfb68..9e9419e 100644
+    --- a/examples/bike-shop-broken/BikeShop.SemanticModel/definition/tables/Stores.tmdl
+    +++ b/../bike-shop/BikeShop.SemanticModel/definition/tables/Stores.tmdl
+    @@ -1,6 +1,6 @@
+     /// One row per retail store.
+     table Stores
+    -	lineageTag: e689596a-59ea-4b2c-a14d-48596a7b8c9d
+    +	lineageTag: cad85256-6367-4144-9e87-10018d08f1ce
+
+     	column store_id
+     		dataType: int64
+    diff --git a/examples/bike-shop-broken/BikeShop.SemanticModel/definition/tables/__Calendar.tmdl b/../bike-shop/BikeShop.SemanticModel/definition/tables/__Calendar.tmdl
+    index 87ed11b..1c2dba7 100644
+    --- a/examples/bike-shop-broken/BikeShop.SemanticModel/definition/tables/__Calendar.tmdl
+    +++ b/../bike-shop/BikeShop.SemanticModel/definition/tables/__Calendar.tmdl
+    @@ -1,7 +1,7 @@
+     /// Central date dimension. Self-contained calculated table so it always
+     /// populates without an external source.
+     table __Calendar
+    -	lineageTag: calendar-tag-TODO
+    +	lineageTag: 06374f8f-6015-4152-a527-e555a357cc6f
+     	dataCategory: Time
+
+     	column Date
+
+Every change is one line: the new ``ref table`` line, the two new
+lineage tags, and the orphan comma, deleted (the emptied line keeps its
+indentation).
+
+6. Open the repaired copy (optional)
+----------------------------------------
+
+If you have Power BI Desktop, open ``../bike-shop/BikeShop.pbip``.
+Opening the ``.pbip`` in Desktop is a manual step that the tool does
+not do, and this page does not report its result. What the tool proves
+is that the four defects it repaired are gone from the files and that
+its re-check passes.
 
 7. Read what remains
 ------------------------
 
-::
+.. code-block:: text
 
-    $ tmdl-preflight check /tmp/bike-shop
+    tmdl-preflight check ../bike-shop
 
-Three findings remain, and all three are info:
+Three findings remain, and all three are info (console report cut):
 
-::
+.. code-block:: text
 
     BikeShop.SemanticModel/definition/tables/Sales Measures.tmdl:21  S001 info: visible measure has no formatString, so it renders with the engine's default formatting. Add a formatString, or run with --ignore S001 if your formatting strategy lives elsewhere. [Sales Measures[Units Sold]]
     BikeShop.SemanticModel/definition/tables/Sales Measures.tmdl:25  M017 info: Line 25: Multiline DAX should use triple backticks
     BikeShop.SemanticModel/definition/tables/__Calendar.tmdl  R013 info: calendar __Calendar has no Year, Quarter, Month, Week, Day column(s). [__Calendar]
 
     scanned: 1 model, 6 tables, 22 columns, 6 measures, 4 relationships, 8 DAX expressions, 1 report
-    (the run then prints its console report: the DAX validation summary
-    and the R001, R002, R004, R005, R009, R010, R012, R013 and R014 blocks)
-    No .bookmark.json files found under /tmp/bike-shop
+    ...
+    No .bookmark.json files found under ../bike-shop
     tmdl-preflight: 0 error(s), 0 warning(s), 3 info(s)
 
-The S001 finding stays on purpose: it is an ``info``-level nudge, not
-a defect that stops the model from opening, and the choice of how to
-format ``Units Sold`` is yours. Give it a ``formatString`` if you
-format measures on the model itself, or run with ``--ignore S001`` if
-your formatting strategy lives elsewhere (a calculation group, a
-theme).
+The S001 finding stays on purpose: it is an ``info`` nudge, and how to
+format ``Units Sold`` is your choice. Give the measure a
+``formatString`` if you format measures on the model itself, or run
+with ``--ignore S001`` if your formatting lives elsewhere (a
+calculation group, a theme).
 
 8. Explore further
 ----------------------
 
-The full rule catalog, one rule in isolation, machine-readable output,
-and a stricter exit code:
+The full rule catalog, one rule on its own, machine-readable output, a
+stricter exit code, a Markdown report and a project inventory:
 
-::
+.. code-block:: text
 
-    $ tmdl-preflight rules
-    $ tmdl-preflight check examples/bike-shop-broken --select M003
-    $ tmdl-preflight check examples/bike-shop-broken --json
-    $ tmdl-preflight check examples/bike-shop-broken --strict
-    $ tmdl-preflight check examples/bike-shop-broken --format markdown
-    $ tmdl-preflight stats examples/bike-shop-clean
+    tmdl-preflight rules
+    tmdl-preflight check examples/bike-shop-broken --select M004
+    tmdl-preflight check examples/bike-shop-broken --json
+    tmdl-preflight check examples/bike-shop-broken --strict
+    tmdl-preflight check examples/bike-shop-broken --format markdown
+    tmdl-preflight stats examples/bike-shop-clean
+
+With ``--strict`` a warning fails the run too. Of the four ``check``
+commands, the three that run every rule exit ``1``. The one that
+selects M004 alone exits ``0``, because M004 is a warning.
 
 Where to go next
 --------------------
 
-- Add a rule of your own: :doc:`../how-to/modify-the-rules-list`
-- Add or change an auto-fix: :doc:`../how-to/modify-the-auto-fixes`
-- Every CLI flag, exit code, and command:
-  :doc:`../reference/usage`
-- The rule catalog, family by family:
-  :doc:`../reference/rules`
+- Every command, flag and exit code: :doc:`../reference/usage`
+- The rule catalog: :doc:`../reference/rules`
 - Configuration files, exemptions, baselines and output formats:
   :doc:`../reference/configuration`
 - Run it in CI and pre-commit: :doc:`../how-to/run-in-ci`
+- Add a rule of your own: :doc:`../how-to/modify-the-rules-list`
+- Add or change an auto-fix: :doc:`../how-to/modify-the-auto-fixes`
 - The pytest fixture, the Python API, and the design behind the
-  check → fix → re-check loop: :doc:`../reference/customization`
+  check, fix, re-check loop: :doc:`../reference/customization`

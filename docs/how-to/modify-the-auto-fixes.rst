@@ -27,7 +27,7 @@ Where the built-in fixers live
      - ``LineageTagUniquenessRule.fix()``
      - ``src/tmdl_preflight/rules/structural.py``
    * - M004 lineage-format
-     - ``LineageFormatRule.fix()``
+     - ``LineageTagFormatRule.fix()``
      - ``src/tmdl_preflight/rules/structural.py``
    * - M006 model-table-refs
      - ``ModelTableReferencesRule.fix()``
@@ -99,26 +99,38 @@ Where the built-in fixers live
      - ``RefreshPolicyRepairRule.fix()``
      - ``src/tmdl_preflight/rules/refresh_policy.py``
 
-Four of the twenty-five are **unsafe**: their repair changes data or
-regenerates content, so they never run in a blanket ``fix`` and run only
-when their rule is selected explicitly. A rule marks itself unsafe
-with the ``safe = False`` class attribute; the catalog prints it
-(``tmdl-preflight rules --json`` reports ``safe: false``), and the run
-names it on a ``not fixed  <RULE>:`` line.
+Four of the twenty-five are **unsafe**: D004, F016, P001 and R007.
+Their repair changes data or regenerates content, so they never run in
+a blanket ``fix`` and run only when their rule is selected explicitly
+(R007 also runs when its option ``fix_autodetected_relationships`` is
+true). A rule marks itself unsafe with the ``safe = False`` class
+attribute; ``tmdl-preflight rules --json`` reports ``"safe": false``
+for it. When a blanket ``fix`` skips an unsafe fixer while the check
+reported findings it repairs, the run names it on a ``not fixed
+<RULE>:`` line; a fixer that also repairs another rule's findings says
+so by overriding ``repaired_rule_ids()`` (P001 returns P001 and P002).
 
-Every built-in fixer shares two helpers. The rule's ``check()`` and
-``fix()`` call the same recognizer (``recognizers.py`` or
-``dax.py``), so they agree on what a defect is. And every write goes
-through ``edits.verified_write(original, new_text, verify)``: the
+The built-in fixers share two habits. A rule's ``check()`` and
+``fix()`` call the same recognizer (in ``recognizers.py``, ``dax.py``
+or the rule's own module), so they agree on what a defect is. And
+every fixer except M022, which replaces a whole ``diagramLayout.json``
+with the blank layout, writes through
+``edits.verified_write(original, new_text, verify)``: the
 ``verify`` callback must prove the edit (for JSON, by parsing both
 versions and comparing) or raise ``EditRefused``, in which case
-nothing is written. The helper also keeps the file's newline style and
-byte-order mark.
+nothing is written. ``verified_write`` also refuses a file that mixes
+its line endings, and a file that changed on disk since it was read.
+``read_text_file`` notes the file's newline style and byte-order mark,
+and ``verified_write`` writes them back unchanged.
 
-To change one's behavior, for example if you want M004's regenerated
-tag to come from a seeded generator instead of a random one, edit that
-method directly in your fork. The configuration file can select,
-ignore or re-grade rules, but it has no hook for fixer internals.
+A few fixers read options from the configuration file: M013
+``fix_mode`` (``"delete"`` or ``"attach"``), R007
+``fix_autodetected_relationships`` and D004 ``fix_enumeration_lines``.
+Beyond those options, the configuration can select, ignore or re-grade
+rules, but it has no hook for fixer internals. To change one's
+behavior, for example if you want M004's regenerated tag to come from a
+seeded generator instead of a random one, edit that method directly in
+your fork.
 
 Add a fixer to a rule of your own
 ---------------------------------------
@@ -126,8 +138,9 @@ Add a fixer to a rule of your own
 Starting from a rule built as in :doc:`modify-the-rules-list`, set
 ``fixable = True`` and implement ``fix()``:
 
-::
+.. code-block:: python
 
+    from tmdl_preflight import Context, Rule, Severity, Violation
     from tmdl_preflight.edits import EditRefused, read_text_file, verified_write
 
 
@@ -156,12 +169,18 @@ Starting from a rule built as in :doc:`modify-the-rules-list`, set
                         if not new.endswith(old):
                             raise EditRefused("only a prefix may be added")
 
-                    if verified_write(original, new_text, verify):
-                        applied.append(f"{table.file.name}: added description stub")
+                    try:
+                        if verified_write(original, new_text, verify):
+                            applied.append(f"{table.file.name}: added description stub")
+                    except EditRefused as exc:
+                        ctx.refused_fixes.append(f"{self.id}: {table.file.name}: {exc}")
             return applied
 
 Return one human-readable string per change; the engine prints them
-and re-checks from disk afterwards. If a fix did not actually resolve
+and re-checks from disk afterwards. Catch ``EditRefused`` yourself:
+the engine does not, so an uncaught one stops the whole run. Recording
+it in ``ctx.refused_fixes``, as the built-in fixers do, makes the CLI
+list it on a ``refused`` line and exit ``2``. If a fix did not actually resolve
 the violation, the re-check says so; you do not need to verify that
 yourself, and the run's exit code will still reflect the leftover
 problem.
@@ -170,15 +189,20 @@ The safety contract
 ------------------------
 
 A repair earns a fixer only if it satisfies all of the following. Only
-twenty-five of the 119 built-in rules do:
+twenty-five of the 119 built-in rules have one:
 
 1. **The failure mode fully determines the repair.** No intent needs
    to be inferred. A duplicate tag needs a fresh unique value; an
    orphan comma needs deletion; a string ``"2"`` needs to become the
    integer ``2``.
-2. **It never overwrites human-authored semantics.** A fixer touches
-   identity metadata, separators, and JSON types, never a DAX
-   expression, a name, or a relationship.
+2. **It never overwrites human-authored semantics.** Most fixers touch
+   identity metadata, separators, layout and JSON types. The few safe
+   fixers that remove or copy content do so only where the failure
+   determines the result: F006 removes an exact duplicate row, F007
+   copies a row the rest of its family already offers and annotates
+   the edit for review, and F014 deletes a selector branch that calls
+   a measure that no longer exists. A fixer never chooses a new name,
+   expression or relationship for you.
 3. **It is idempotent.** Running ``fix`` twice produces the same tree
    as running it once.
 4. **It is minimal.** Line-level, targeted edits, so the resulting
@@ -194,15 +218,18 @@ intents, so there is no fixer there either.
 A fifth condition applies to the four unsafe fixers: a repair that
 changes data or regenerates content is not safe to run without being
 asked for. D004 deletes whole generated ``ISFILTERED(...)`` lines, F016
-deletes rows from a picker a user sees, P001 rewrites a partition's M
-source, and R007 deletes relationship blocks. Each one is marked
-``safe = False`` and runs only when its rule is selected explicitly.
+deletes rows from a picker a user sees, P001 copies the partition
+source into a drifted ``sourceExpression`` and adds missing refresh
+policies (rewriting a loader call from a configured template, after
+which a full refresh is required), and R007 deletes relationship
+blocks. Each one is marked ``safe = False`` and
+runs only when its rule is selected explicitly.
 
 Test it like the built-ins
 -------------------------------
 
-Follow the pattern in the project's own ``tests/test_rules_*.py``:
-copy a clean fixture model, break exactly one thing, assert the
-violation, then assert that fix, followed by a re-check, comes back
-clean, and that running the fixer a second time changes nothing
-further.
+Follow the pattern of the tool's own test suite (``tests/`` in the
+repository): copy a clean fixture model, break exactly one thing,
+assert the violation, then assert that fix, followed by a re-check,
+comes back clean, and that running the fixer a second time changes
+nothing further.

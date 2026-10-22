@@ -1,14 +1,15 @@
 How to run tmdl-preflight in CI
 ===================================
 
-Goal: block a pull request that would break the model, before anyone
-opens it in Power BI Desktop. The rule of thumb is **CI checks;
+Goal: block a pull request that fails the model's checks, before
+anyone opens it in Power BI Desktop. The rule of thumb is **CI checks;
 developers fix**: the pipeline runs the read-only ``check``, and
 auto-fixes happen on a developer's machine, where the diff is reviewed
 and committed like any other change.
 
 Every example below runs from the repository root, which holds the
-PBIP project, and assumes Python 3.10 or newer.
+PBIP project, and assumes Python 3.10 or newer. The examples pin
+``v1.2.1``, the release this page describes.
 
 Before every commit: pre-commit
 -----------------------------------
@@ -16,11 +17,11 @@ Before every commit: pre-commit
 The repository ships a ``.pre-commit-hooks.yaml``. Add it to the
 project's ``.pre-commit-config.yaml``:
 
-::
+.. code-block:: yaml
 
     repos:
-      - repo: https://github.com/c-kapsalis/tmdl-preflight
-        rev: v1.2.0
+      - repo: https://github.com/C-Kapsalis/tmdl-preflight
+        rev: v1.2.1
         hooks:
           - id: tmdl-preflight
 
@@ -33,16 +34,19 @@ re-checks; use it only if your team wants fixes applied on commit.
 On every pull request: GitHub Actions
 -----------------------------------------
 
-``examples/ci/github-actions.yml`` in the repository is a complete
-workflow; copy it to ``.github/workflows/tmdl-preflight.yml``. Its
-core:
+``examples/ci/github-actions.yml`` in the tool's repository is a
+complete workflow; copy it to ``.github/workflows/tmdl-preflight.yml``.
+At the ``v1.2.1`` tag that file still installs ``@v1.1.0``, and the
+repository's ``examples/ci/pre-commit-config.yaml`` still pins
+``rev: v1.1.0``: change both pins to ``v1.2.1`` when you copy them. The
+workflow's core:
 
-::
+.. code-block:: yaml
 
     - uses: actions/setup-python@v5
       with:
         python-version: "3.12"
-    - run: pip install "tmdl-preflight @ git+https://github.com/c-kapsalis/tmdl-preflight@v1.2.0"
+    - run: pip install "tmdl-preflight @ git+https://github.com/C-Kapsalis/tmdl-preflight@v1.2.1"
     - run: tmdl-preflight check . --format github
 
 ``--format github`` prints workflow commands, so each violation shows
@@ -52,7 +56,7 @@ step fails the job on errors (and on warnings with ``--strict``).
 To also see findings as code-scanning alerts, write SARIF and upload
 it. The job needs ``security-events: write`` permission:
 
-::
+.. code-block:: yaml
 
     - run: tmdl-preflight check . --format sarif > tmdl-preflight.sarif || true
       if: always()
@@ -65,7 +69,7 @@ it. The job needs ``security-events: write`` permission:
 For a readable summary on the run page, append the Markdown report to
 the job summary:
 
-::
+.. code-block:: yaml
 
     - run: tmdl-preflight check . --format markdown >> "$GITHUB_STEP_SUMMARY"
       if: always()
@@ -75,15 +79,19 @@ Azure DevOps
 
 The same shape:
 
-::
+.. code-block:: yaml
 
     steps:
       - task: UsePythonVersion@0
         inputs:
           versionSpec: "3.12"
-      - script: pip install "tmdl-preflight @ git+https://github.com/c-kapsalis/tmdl-preflight@v1.2.0"
+      - script: pip install "tmdl-preflight @ git+https://github.com/C-Kapsalis/tmdl-preflight@v1.2.1"
       - script: tmdl-preflight check $(Build.SourcesDirectory) --strict
         displayName: TMDL preflight
+
+``$(Build.SourcesDirectory)`` is an Azure Pipelines variable, expanded
+before the step runs, so the same lines work on Windows and Linux
+agents.
 
 Gate only on new violations
 -------------------------------
@@ -91,12 +99,12 @@ Gate only on new violations
 On a model that is not clean yet, record a baseline once, commit it,
 and point CI at it:
 
-::
+.. code-block:: text
 
-    $ tmdl-preflight baseline .
-    $ git add .tmdl-preflight-baseline.json
+    tmdl-preflight baseline .
+    git add .tmdl-preflight-baseline.json
 
-::
+.. code-block:: yaml
 
     - run: tmdl-preflight check . --baseline .tmdl-preflight-baseline.json --format github
 
@@ -111,14 +119,17 @@ Different settings for CI
 
 Keep one configuration file and give CI its own profile:
 
-::
+.. code-block:: toml
 
     [tool.tmdl-preflight.profiles.ci]
     strict = true
 
-::
+.. code-block:: yaml
 
     - run: tmdl-preflight check . --profile ci --format github
+
+``--profile ci`` with no configuration file, or with a configuration
+that has no ``ci`` profile, fails with exit code ``2``.
 
 Exit codes are the contract: ``0`` clean, ``1`` violations remain,
 ``2`` a usage, path, configuration or baseline problem, so a missing
