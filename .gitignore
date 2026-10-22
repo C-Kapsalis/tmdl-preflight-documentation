@@ -1,3 +1,4 @@
 _build
 sphinxenv
+.venv-docs
 .DS_Store

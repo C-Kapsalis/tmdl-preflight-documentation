@@ -2,9 +2,9 @@ How to modify the auto-fixes
 ================================
 
 Goal: give a rule of your own an auto-fix, or change what one of the
-ten built-in fixers does. Only ten of the thirty-seven rules ship a
-fixer, and that is deliberate; read the safety contract below before
-writing one.
+twenty-five built-in fixers does. Only twenty-five of the 119 rules
+ship a fixer, and that is deliberate; read the safety contract below
+before writing one.
 
 You will need working familiarity with Python and, for the pytest
 route, with the pytest library itself, plus enough familiarity with
@@ -27,32 +27,84 @@ Where the built-in fixers live
      - ``LineageTagUniquenessRule.fix()``
      - ``src/tmdl_preflight/rules/structural.py``
    * - M004 lineage-format
-     - ``LineageTagFormatRule.fix()``
+     - ``LineageFormatRule.fix()``
      - ``src/tmdl_preflight/rules/structural.py``
    * - M006 model-table-refs
      - ``ModelTableReferencesRule.fix()``
      - ``src/tmdl_preflight/rules/structural.py``
-   * - F001 fieldparam-comma-runs
-     - ``FieldParameterCommaRunsRule.fix()``
-     - ``src/tmdl_preflight/rules/field_parameters.py``
    * - M011 property-after-child-block
      - ``PropertyAfterChildBlockRule.fix()``
      - ``src/tmdl_preflight/rules/structural.py``
    * - M013 dangling-description
      - ``DanglingDescriptionRule.fix()``
      - ``src/tmdl_preflight/rules/structural.py``
+   * - M019 undefined-query-group
+     - ``UndefinedQueryGroupRule.fix()``
+     - ``src/tmdl_preflight/rules/hygiene.py``
+   * - M021 culture-orphan-bindings
+     - ``CultureOrphanBindingsRule.fix()``
+     - ``src/tmdl_preflight/rules/cultures.py``
+   * - M022 diagram-layout-blank
+     - ``DiagramLayoutBlankRule.fix()``
+     - ``src/tmdl_preflight/rules/hygiene.py``
+   * - D004 dax-reference-resolution
+     - ``DaxReferenceResolutionRule.fix()``
+     - ``src/tmdl_preflight/rules/dax_rules.py``
+   * - R007 autodetected-relationships
+     - ``AutodetectedRelationshipsRule.fix()``
+     - ``src/tmdl_preflight/rules/relationships.py``
+   * - F001 fieldparam-comma-runs
+     - ``FieldParameterCommaRunsRule.fix()``
+     - ``src/tmdl_preflight/rules/fp_rows.py``
    * - F002 fieldparam-missing-separator
      - ``MissingRowSeparatorRule.fix()``
      - ``src/tmdl_preflight/rules/field_parameters.py``
    * - F003 fieldparam-trailing-comma
      - ``TrailingRowCommaRule.fix()``
      - ``src/tmdl_preflight/rules/field_parameters.py``
+   * - F004 fieldparam-ragged-rows
+     - ``RaggedRowWidthRule.fix()``
+     - ``src/tmdl_preflight/rules/fp_rows.py``
+   * - F006 fieldparam-duplicate-rows
+     - ``FieldParameterDuplicateRowsRule.fix()``
+     - ``src/tmdl_preflight/rules/fp_rows.py``
+   * - F007 fieldparam-family-consistency
+     - ``FieldParameterFamilyConsistencyRule.fix()``
+     - ``src/tmdl_preflight/rules/fp_rows.py``
+   * - F014 selector-branch-resolution
+     - ``SelectorBranchResolutionRule.fix()``
+     - ``src/tmdl_preflight/rules/fp_axes.py``
+   * - F016 fieldparam-double-slash-rows
+     - ``FieldParameterDoubleSlashRowsRule.fix()``
+     - ``src/tmdl_preflight/rules/fp_layout.py``
+   * - F017 fieldparam-blank-lines
+     - ``FieldParameterBlankLinesRule.fix()``
+     - ``src/tmdl_preflight/rules/fp_layout.py``
    * - B001 bookmark-int-types
      - ``BookmarkIntegerTypesRule.fix()``
      - ``src/tmdl_preflight/rules/report.py``
    * - B003 bookmark-options-schema
      - ``BookmarkOptionsSchemaRule.fix()``
      - ``src/tmdl_preflight/rules/report.py``
+   * - B007 report-format-schema
+     - ``ReportFormatSchemaRule.fix()``
+     - ``src/tmdl_preflight/rules/report_format.py``
+   * - A003 mapping-category-required-keys
+     - ``MappingCategoryRequiredKeysRule.fix()``
+     - ``src/tmdl_preflight/rules/mapping.py``
+   * - O009 helper-measures-hidden
+     - ``HelperMeasuresHiddenRule.fix()``
+     - ``src/tmdl_preflight/rules/measure_hygiene.py``
+   * - P001 refresh-policy-repair
+     - ``RefreshPolicyRepairRule.fix()``
+     - ``src/tmdl_preflight/rules/refresh_policy.py``
+
+Four of the twenty-five are **unsafe**: their repair changes data or
+regenerates content, so they never run in a blanket ``fix`` and run only
+when their rule is selected explicitly. A rule marks itself unsafe
+with the ``safe = False`` class attribute; the catalog prints it
+(``tmdl-preflight rules --json`` reports ``safe: false``), and the run
+names it on a ``not fixed  <RULE>:`` line.
 
 Every built-in fixer shares two helpers. The rule's ``check()`` and
 ``fix()`` call the same recognizer (``recognizers.py`` or
@@ -80,7 +132,7 @@ Starting from a rule built as in :doc:`modify-the-rules-list`, set
 
 
     class TableDescriptionRule(Rule):
-        id = "X001"
+        id = "Y001"
         name = "table-descriptions"
         severity = Severity.WARNING
         description = "Visible tables should carry a /// description comment."
@@ -118,7 +170,7 @@ The safety contract
 ------------------------
 
 A repair earns a fixer only if it satisfies all of the following. Only
-ten of the thirty-seven built-in rules do:
+twenty-five of the 119 built-in rules do:
 
 1. **The failure mode fully determines the repair.** No intent needs
    to be inferred. A duplicate tag needs a fresh unique value; an
@@ -138,6 +190,13 @@ completions, so only the author knows which one is meant, and there is
 no fixer. A dangling bookmark reference (B002) could mean restore the
 visual, retarget the bookmark, or delete the bookmark, three different
 intents, so there is no fixer there either.
+
+A fifth condition applies to the four unsafe fixers: a repair that
+changes data or regenerates content is not safe to run without being
+asked for. D004 deletes whole generated ``ISFILTERED(...)`` lines, F016
+deletes rows from a picker a user sees, P001 rewrites a partition's M
+source, and R007 deletes relationship blocks. Each one is marked
+``safe = False`` and runs only when its rule is selected explicitly.
 
 Test it like the built-ins
 -------------------------------

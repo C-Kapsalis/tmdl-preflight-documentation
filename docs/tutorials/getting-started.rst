@@ -14,17 +14,26 @@ and writes plain TMDL text files directly.
 
 The repository ships two copies of a small fictional PBIP project, the
 Pedal and Sprocket Bike Co. model, under ``examples/``:
-``bike-shop-clean`` (every rule passes) and ``bike-shop-broken`` (the
-same model, seeded with defects). Open
+``bike-shop-clean`` (the model as it should be) and
+``bike-shop-broken`` (the same model, seeded with defects). Open
 ``examples/bike-shop-broken/BikeShop.pbip`` in Power BI Desktop.
 
-It does not open. One of the seeded defects, a table missing its ``ref
-table`` line in ``model.tmdl``, is exactly the kind of thing that sails
-past a code review, since nothing in a diff looks wrong, but stops
-Power BI Desktop cold. The error Desktop shows is generic, and in some
-cases there is no error at all: the file just hangs on load and the
-report never opens. Either way, nothing names the file, the table, or
-the fix. That is the gap ``tmdl-preflight`` closes.
+It does not open. The seeded defect that stops it is a duplicate
+``lineageTag``: ``Stores`` carries the tag ``Products`` already has, and
+Desktop refuses the project outright ("Failed to add a deserialized
+Table object into the model ... An object with lineage-tag '...' already
+exists in the collection"). That is the kind of thing that sails past a
+code review, since nothing in a diff looks wrong, but stops Power BI
+Desktop cold. The error Desktop shows is generic, and in some cases
+there is no error at all: the file just hangs on load and the report
+never opens. Either way, nothing names the file, the table, or the
+fix. That is the gap ``tmdl-preflight`` closes.
+
+The other seeded defects behave differently, and the tool's own release
+notes record what Desktop did with each of them on a Windows bench: a
+missing ``ref table`` line (M006) still loads, and a field-parameter
+orphan comma (F001) opens the model but breaks every visual that uses
+the field parameter. Only the duplicate tag stops the project opening.
 
 2. Install
 -------------
@@ -47,7 +56,7 @@ Confirm the console command is on the path:
 
 ::
 
-    tmdl-preflight 1.1.0
+    tmdl-preflight 1.2.0
 
 3. Check the clean model
 ----------------------------
@@ -60,18 +69,38 @@ Confirm the console command is on the path:
 
     $ tmdl-preflight check examples/bike-shop-clean
 
-Every rule passes:
+The model itself passes every rule. The run reports three errors and
+two info findings:
 
 ::
 
+    BikeShop.Report/definition/pages/pages.json  B005 error: definition/pages/pages.json is missing; the report has no pages metadata. Save the report again from Power BI Desktop (PBIR format). [BikeShop.Report]
+    BikeShop.Report/definition/report.json  B008 error: BikeShop.Report: definition/report.json is missing; Power BI Desktop cannot open a report folder without it.
+    BikeShop.Report/definition/version.json  B008 error: BikeShop.Report: definition/version.json is missing; Power BI Desktop cannot open a report folder without it.
+    BikeShop.SemanticModel/definition/tables/Sales Measures.tmdl:26  M017 info: Line 26: Multiline DAX should use triple backticks
+    BikeShop.SemanticModel/definition/tables/__Calendar.tmdl  R013 info: calendar __Calendar has no Year, Quarter, Month, Week, Day column(s). [__Calendar]
+
     scanned: 1 model, 6 tables, 22 columns, 6 measures, 4 relationships, 8 DAX expressions, 1 report
-    tmdl-preflight: 0 error(s), 0 warning(s), 0 info(s)
+    (the run then prints its console report: the DAX validation summary
+    and the R001, R002, R004, R005, R009, R010, R012, R013 and R014 blocks)
+    No .bookmark.json files found under .
+    tmdl-preflight: 3 error(s), 0 warning(s), 2 info(s)
 
 The ``scanned:`` line says how much of the project the run looked at,
-so a run that silently found nothing to check is obvious.
+so a run that silently found nothing to check is obvious. The run
+exits ``1``, because of the three errors.
 
-Exit code 0: every rule passes, and the model opens in Power BI
-Desktop without incident.
+Read the three errors carefully: none of them is about the model. They
+come from the report layer, and they say the shipped example's
+``BikeShop.Report`` folder is in the older PBIR layout: its
+``report.json`` sits at the report root instead of under
+``definition/``, and it carries no ``definition/version.json`` and no
+``definition/pages/pages.json``. The B005 and B008 rules want the file
+set a report saved by Power BI Desktop has. Against the model itself
+the run reports only the two info findings (M017, a measure whose
+multi-line DAX is not fenced, and R013, a calendar without the usual
+year/quarter/month levels). The exit code is ``1`` because a report
+folder that Desktop cannot open is a blocker, wherever it sits.
 
 4. Check the broken model
 -----------------------------
@@ -80,41 +109,54 @@ Desktop without incident.
 
     $ tmdl-preflight check examples/bike-shop-broken
 
-Five findings come back:
+Ten findings come back, three of them the report-layer errors the
+clean example also has:
 
 ::
 
-    BikeShop.SemanticModel/definition/tables/Metric Selector.tmdl:45  F001 error: stray comma run (1 orphan comma(s)) in calculated partition source [Metric Selector (partition source)] (auto-fixable)
+    BikeShop.Report/definition/pages/pages.json  B005 error: definition/pages/pages.json is missing; the report has no pages metadata. Save the report again from Power BI Desktop (PBIR format). [BikeShop.Report]
+    BikeShop.Report/definition/report.json  B008 error: BikeShop.Report: definition/report.json is missing; Power BI Desktop cannot open a report folder without it.
+    BikeShop.Report/definition/version.json  B008 error: BikeShop.Report: definition/version.json is missing; Power BI Desktop cannot open a report folder without it.
+    BikeShop.SemanticModel/definition/tables/Metric Selector.tmdl:45  F001 error: 1 orphan comma(s). Power BI Desktop still opens the model, but every visual that uses this table fails ('Error fetching data for this visual'). Delete the orphan comma(s) (the auto-fix does). [Metric Selector (field-parameter file)] (auto-fixable)
     BikeShop.SemanticModel/definition/tables/Sales Measures.tmdl:21  S001 info: visible measure has no formatString, so it renders with the engine's default formatting. Add a formatString, or run with --ignore S001 if your formatting strategy lives elsewhere. [Sales Measures[Units Sold]]
-    BikeShop.SemanticModel/definition/tables/Stores.tmdl  M006 error: table 'Stores' is defined in tables/ but has no 'ref table' line in model.tmdl, so it is not part of the model and Power BI will not open the project. Add: ref table Stores [Stores] (auto-fixable)
-    BikeShop.SemanticModel/definition/tables/Stores.tmdl:3  M003 error: lineageTag 'e689596a-59ea-4b2c-a14d-48596a7b8c9d' duplicates the one on table Products (Products.tmdl:3) [table Stores] (auto-fixable)
-    BikeShop.SemanticModel/definition/tables/__Calendar.tmdl:4  M004 warning: lineageTag 'calendar-tag-TODO' is not a canonical UUID [table __Calendar] (auto-fixable)
+    BikeShop.SemanticModel/definition/tables/Sales Measures.tmdl:25  M017 info: Line 25: Multiline DAX should use triple backticks
+    BikeShop.SemanticModel/definition/tables/Stores.tmdl  M006 warning: table 'Stores' is defined in tables/ but has no 'ref table' line in model.tmdl. Power BI Desktop still loads the table, but model.tmdl is out of step with tables/. Add: ref table Stores [Stores] (auto-fixable)
+    BikeShop.SemanticModel/definition/tables/Stores.tmdl:3  M003 error: Duplicate lineageTag 'e689596a-59ea-4b2c-a14d-48596a7b8c9d' found in files: Products.tmdl, Stores.tmdl. The tag on line 3 (table Products) is the one that keeps it; the copy on line 3 (table Stores) is regenerated by the auto-fix. [table Stores] (auto-fixable)
+    BikeShop.SemanticModel/definition/tables/__Calendar.tmdl  R013 info: calendar __Calendar has no Year, Quarter, Month, Week, Day column(s). [__Calendar]
+    BikeShop.SemanticModel/definition/tables/__Calendar.tmdl:4  M004 warning: LineageTag 'calendar-tag-TODO' is not a canonically-formatted UUID (expected 8-4-4-4-12 hex). Power BI rejects a tag it cannot read; the auto-fix writes a fresh one. [table __Calendar] (auto-fixable)
 
     scanned: 1 model, 6 tables, 22 columns, 6 measures, 4 relationships, 8 DAX expressions, 1 report
-    tmdl-preflight: 3 error(s), 1 warning(s), 1 info(s)
+    (the run then prints its console report: the DAX validation summary
+    and the R001, R002, R004, R005, R009, R010, R012, R013 and R014 blocks)
+    No .bookmark.json files found under .
+    tmdl-preflight: 5 error(s), 2 warning(s), 3 info(s)
 
 Exit code 1. Every line names the file, the line where one exists, the
 rule id, the severity, and what is wrong; where the tool can repair it,
 an ``(auto-fixable)`` marker:
 
-- **M006**, the exact defect that stopped Desktop from opening the
-  project: ``Stores`` is defined under ``tables/`` but has no ``ref
-  table`` line, so it is not attached to the model.
-- **M003**: ``Stores`` copied ``Products``' ``lineageTag``. A duplicate
-  like this is often the one that survives review and Desktop, then
-  fails a deployment days later; here it also compounds the open
-  failure.
+- **M003**: ``Stores`` copied ``Products``' ``lineageTag``. This is the
+  exact defect that stopped Desktop from opening the project, and the
+  one that survives review because nothing in the diff looks wrong.
+- **F001**: a deleted field-parameter row left an orphan comma behind,
+  so the calculated partition source no longer parses. Desktop still
+  opens the model, but every visual that uses the field parameter fails.
+- **M006**: ``Stores`` is defined under ``tables/`` but has no ``ref
+  table`` line, so ``model.tmdl`` is out of step with ``tables/``. This
+  is a **warning**, not a blocker: Desktop still loads the table, and
+  the fixer adds the missing line anyway.
 - **M004**: ``__Calendar``'s ``lineageTag`` is a ``TODO`` placeholder,
   not a UUID.
-- **F001**: a deleted field-parameter row left an orphan comma behind,
-  so the calculated partition source no longer parses.
 - **S001**: the visible measure ``Units Sold`` has no ``formatString``.
   An advisory nudge, not a blocker; it does not stop the model from
   opening.
+- **M017** and **R013**: two info findings about a multi-line DAX body
+  and a calendar without the usual levels.
+- **B005** and **B008**: the report-layer errors from step 3.
 
-Four findings carry the ``(auto-fixable)`` marker; S001 does not. That
-split is deliberate: a defect earns an auto-fix only when the failure
-itself fully determines the repair.
+Four findings carry the ``(auto-fixable)`` marker: F001, M006, M003 and
+M004. The other six do not. That split is deliberate: a defect earns
+an auto-fix only when the failure itself fully determines the repair.
 
 5. Fix a copy
 ----------------
@@ -132,31 +174,48 @@ Four fixers run, then the re-check reports what remains:
 ::
 
     fixed  M006: model.tmdl: + ref table Stores
-    fixed  M003: Stores.tmdl:3 (table Stores): 'e689596a-59ea-4b2c-a14d-48596a7b8c9d' -> '14946e6f-ad2f-4520-97f8-ade96bc6adeb'
-    fixed  M004: __Calendar.tmdl:4 (table __Calendar): 'calendar-tag-TODO' -> 'a3461075-352b-454c-9469-c584419c2b3e'
-    fixed  F001: Metric Selector.tmdl: removed 1 orphan comma(s) from 'Metric Selector' partition source
+    fixed  M003: Stores.tmdl:3 (table Stores): 'e689596a-59ea-4b2c-a14d-48596a7b8c9d' -> '91232640-8fc3-4547-9f7a-b32beb0b4d0f'
+    fixed  M004: __Calendar.tmdl:4 (table __Calendar): 'calendar-tag-TODO' -> '4ddb8fa0-44ca-444c-9d59-b1744dad3fd2'
+    fixed  F001: Metric Selector.tmdl: removed 1 orphan comma(s)
+    not fixed  R007: its fixer can change data, so a blanket fix skips it; run 'fix --select R007' to apply it
 
+    BikeShop.Report/definition/pages/pages.json  B005 error: definition/pages/pages.json is missing; the report has no pages metadata. Save the report again from Power BI Desktop (PBIR format). [BikeShop.Report]
+    BikeShop.Report/definition/report.json  B008 error: BikeShop.Report: definition/report.json is missing; Power BI Desktop cannot open a report folder without it.
+    BikeShop.Report/definition/version.json  B008 error: BikeShop.Report: definition/version.json is missing; Power BI Desktop cannot open a report folder without it.
     BikeShop.SemanticModel/definition/tables/Sales Measures.tmdl:21  S001 info: visible measure has no formatString, so it renders with the engine's default formatting. Add a formatString, or run with --ignore S001 if your formatting strategy lives elsewhere. [Sales Measures[Units Sold]]
+    BikeShop.SemanticModel/definition/tables/Sales Measures.tmdl:25  M017 info: Line 25: Multiline DAX should use triple backticks
+    BikeShop.SemanticModel/definition/tables/__Calendar.tmdl  R013 info: calendar __Calendar has no Year, Quarter, Month, Week, Day column(s). [__Calendar]
 
     scanned: 1 model, 6 tables, 22 columns, 6 measures, 4 relationships, 8 DAX expressions, 1 report
-    tmdl-preflight: 0 error(s), 0 warning(s), 1 info(s), 4 fix(es) applied
+    (the run then prints its console report: the DAX validation summary
+    and the R001, R002, R004, R005, R009, R010, R012, R013 and R014 blocks)
+    No .bookmark.json files found under .
+    tmdl-preflight: 3 error(s), 0 warning(s), 3 info(s), 4 fix(es) applied
+
+    Removed 1 orphan comma(s) across 1 file(s). Commit the changes and re-sync the affected workspace(s).
 
 (The regenerated UUIDs are random; yours will differ.) Three things
 happened, in order: every rule ran (``check``); the fixers of the
 rules that failed ran, editing files on disk; then every rule ran
-**again**, from disk, and the report above is that re-check. Exit code
-0 because the re-check came back clean of blockers, not because fixers
-ran. Diff the copy against ``examples/bike-shop-broken`` before moving
-on: every auto-fix is a one-line, or one-value, change.
+**again**, from disk, and the report above is that re-check. The exit
+code is ``1``: the re-check still finds the three report-layer errors,
+and ``fix`` reports the state of the run rather than hiding it. The
+``not fixed  R007:`` line is the other half of that honesty: R007's
+fixer deletes relationship blocks, so it is unsafe and never runs in a
+blanket fix. Diff the copy against ``examples/bike-shop-broken``
+before moving on: every auto-fix is a one-line, or one-value, change.
 
 6. Open the repaired copy
 -----------------------------
 
-Open ``/tmp/bike-shop/BikeShop.pbip`` in Power BI Desktop. It opens
-clean: ``Stores`` is present, the calendar and duplicate lineage tags
-are resolved, and the ``Metric Selector`` field parameter loads without
-a parse error. Nothing was guessed on your behalf; every change above
-is one you can read in a two-line diff.
+Open ``/tmp/bike-shop/BikeShop.pbip`` in Power BI Desktop. Nothing was
+guessed on your behalf; every change above is one you can read in a
+two-line diff: ``Stores`` is attached to the model again, the calendar
+and duplicate lineage tags are resolved, and the ``Metric Selector``
+field parameter loads without a parse error. Opening the ``.pbip`` in
+Power BI Desktop is a manual step that has not been done by the tool:
+what the tool proves is that the four defects it repaired are gone
+from the files.
 
 7. Read what remains
 ------------------------
@@ -165,16 +224,25 @@ is one you can read in a two-line diff.
 
     $ tmdl-preflight check /tmp/bike-shop
 
-One finding remains:
+Six findings remain: the three report-layer errors the shipped example
+carries, and three info findings.
 
 ::
 
+    BikeShop.Report/definition/pages/pages.json  B005 error: definition/pages/pages.json is missing; the report has no pages metadata. Save the report again from Power BI Desktop (PBIR format). [BikeShop.Report]
+    BikeShop.Report/definition/report.json  B008 error: BikeShop.Report: definition/report.json is missing; Power BI Desktop cannot open a report folder without it.
+    BikeShop.Report/definition/version.json  B008 error: BikeShop.Report: definition/version.json is missing; Power BI Desktop cannot open a report folder without it.
     BikeShop.SemanticModel/definition/tables/Sales Measures.tmdl:21  S001 info: visible measure has no formatString, so it renders with the engine's default formatting. Add a formatString, or run with --ignore S001 if your formatting strategy lives elsewhere. [Sales Measures[Units Sold]]
+    BikeShop.SemanticModel/definition/tables/Sales Measures.tmdl:25  M017 info: Line 25: Multiline DAX should use triple backticks
+    BikeShop.SemanticModel/definition/tables/__Calendar.tmdl  R013 info: calendar __Calendar has no Year, Quarter, Month, Week, Day column(s). [__Calendar]
 
     scanned: 1 model, 6 tables, 22 columns, 6 measures, 4 relationships, 8 DAX expressions, 1 report
-    tmdl-preflight: 0 error(s), 0 warning(s), 1 info(s)
+    (the run then prints its console report: the DAX validation summary
+    and the R001, R002, R004, R005, R009, R010, R012, R013 and R014 blocks)
+    No .bookmark.json files found under .
+    tmdl-preflight: 3 error(s), 0 warning(s), 3 info(s)
 
-Exit code 0. S001 stays on purpose: it is an ``info``-level nudge, not
+The S001 finding stays on purpose: it is an ``info``-level nudge, not
 a defect that stops the model from opening, and the choice of how to
 format ``Units Sold`` is yours. Give it a ``formatString`` if you
 format measures on the model itself, or run with ``--ignore S001`` if
@@ -190,7 +258,7 @@ and a stricter exit code:
 ::
 
     $ tmdl-preflight rules
-    $ tmdl-preflight check examples/bike-shop-broken --select M006
+    $ tmdl-preflight check examples/bike-shop-broken --select M003
     $ tmdl-preflight check examples/bike-shop-broken --json
     $ tmdl-preflight check examples/bike-shop-broken --strict
     $ tmdl-preflight check examples/bike-shop-broken --format markdown
@@ -201,8 +269,10 @@ Where to go next
 
 - Add a rule of your own: :doc:`../how-to/modify-the-rules-list`
 - Add or change an auto-fix: :doc:`../how-to/modify-the-auto-fixes`
-- Every CLI flag, exit code, and the rule catalog:
+- Every CLI flag, exit code, and command:
   :doc:`../reference/usage`
+- The rule catalog, family by family:
+  :doc:`../reference/rules`
 - Configuration files, exemptions, baselines and output formats:
   :doc:`../reference/configuration`
 - Run it in CI and pre-commit: :doc:`../how-to/run-in-ci`

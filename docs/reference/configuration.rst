@@ -63,7 +63,8 @@ the keys of the top-level object.
      - Meaning
    * - ``select``
      - Rule ids or names to run. ``--select`` on the command line
-       replaces it.
+       replaces it. The opt-in rules (:doc:`rules`) run only when they
+       are named here or on the command line.
    * - ``ignore``
      - Rule ids or names to skip. ``--ignore`` on the command line adds
        to it.
@@ -79,15 +80,28 @@ the keys of the top-level object.
        still parsed, so references into them still resolve.
    * - ``rules.<ID>``
      - Per-rule options. Each rule declares the options it accepts
-       (``tmdl-preflight rules --json`` lists them); today these are
-       S002 ``min_length`` and ``placeholder_words``, and D004
-       ``check_bare_references``.
+       (``tmdl-preflight rules --json`` lists them, with their
+       defaults); 70 rules declare options today. Examples: S002
+       ``min_length`` and ``placeholder_words``, D004
+       ``check_bare_references``, D001 ``min_success_rate``, D002
+       ``excluded_tables``, M013 ``fix_mode``, M016 ``required_files``,
+       R007 ``fix_autodetected_relationships``, R011
+       ``min_fact_coverage_percent``, and the whole ``C001``-``C012``
+       and ``O001``-``O015`` contract sets.
    * - ``exemptions``
      - A list of documented exceptions, below.
    * - ``profiles.<name>``
      - A table with any of the keys above, deep-merged over the base
        settings when the run passes ``--profile <name>``. Tables
        merge key by key; lists and values replace.
+   * - ``contracts``, ``refresh_policy``, ``live``, ``advisory``, ``table_roles``, ``measure_classes``, ``bookmarks``, ``manifest``
+     - Project sections that a group of rules reads as a whole: the
+       declared model contracts, the incremental-refresh settings, the
+       live-check options, the advisory list the pytest plugin reads,
+       and the shared table-role, measure-class, bookmark and manifest
+       settings. Each section is validated by the rules that use it, so
+       a mistake in one is reported by the rule that reads it, not by
+       the configuration loader.
 
 Paths and globs
 ~~~~~~~~~~~~~~~~~~~
@@ -172,8 +186,10 @@ refuses to run:
 - when the file already exists and ``--update`` was not given.
 
 Rules whose defects stop a model from opening or deploying are never
-recorded and always fail the check: M003, M006, M007, M010, M015 and
-R006 (``baselinable = False``).
+recorded and always fail the check: M003, M007, M010, M015, R006 and
+R007 (``baselinable = False``). R007 is in that list because a
+relationship Desktop invented on its own can silently change results,
+so a team has to deal with it rather than accept it.
 
 Output formats
 ------------------

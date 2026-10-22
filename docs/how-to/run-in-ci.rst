@@ -20,7 +20,7 @@ project's ``.pre-commit-config.yaml``:
 
     repos:
       - repo: https://github.com/c-kapsalis/tmdl-preflight
-        rev: v1.1.0
+        rev: v1.2.0
         hooks:
           - id: tmdl-preflight
 
@@ -42,7 +42,7 @@ core:
     - uses: actions/setup-python@v5
       with:
         python-version: "3.12"
-    - run: pip install "tmdl-preflight @ git+https://github.com/c-kapsalis/tmdl-preflight@v1.1.0"
+    - run: pip install "tmdl-preflight @ git+https://github.com/c-kapsalis/tmdl-preflight@v1.2.0"
     - run: tmdl-preflight check . --format github
 
 ``--format github`` prints workflow commands, so each violation shows
@@ -81,7 +81,7 @@ The same shape:
       - task: UsePythonVersion@0
         inputs:
           versionSpec: "3.12"
-      - script: pip install "tmdl-preflight @ git+https://github.com/c-kapsalis/tmdl-preflight@v1.1.0"
+      - script: pip install "tmdl-preflight @ git+https://github.com/c-kapsalis/tmdl-preflight@v1.2.0"
       - script: tmdl-preflight check $(Build.SourcesDirectory) --strict
         displayName: TMDL preflight
 

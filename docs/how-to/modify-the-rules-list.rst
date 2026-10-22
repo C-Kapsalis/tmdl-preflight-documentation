@@ -2,7 +2,7 @@ How to modify the rules list
 ================================
 
 Goal: add a rule of your own, enforcing a convention the built-in
-thirty-seven do not cover, such as "every visible table must carry a
+119 rules do not cover, such as "every visible table must carry a
 description," using the same engine, CLI selection, and pytest fixture
 the built-in rules use. There is no plugin or entry-point discovery
 mechanism for this; a custom rule is added in code, in your own fork or
@@ -19,7 +19,7 @@ worth reading first if any of this feels underspecified.
 1. Subclass ``Rule``
 ------------------------
 
-A rule is a class with four class attributes and a ``check()`` method:
+A rule is a class with a few class attributes and a ``check()`` method:
 
 ::
 
@@ -27,7 +27,7 @@ A rule is a class with four class attributes and a ``check()`` method:
 
 
     class TableDescriptionRule(Rule):
-        id = "X001"                      # unique; pick a prefix outside M/D/R/F/B/S
+        id = "Y001"                      # unique; a prefix outside M/D/R/F/B/S/A/C/L/N/O/P/X
         name = "table-descriptions"
         severity = Severity.WARNING
         description = "Visible tables should carry a /// description comment."
@@ -73,6 +73,11 @@ and hand it to the engine:
     report = check(Context("MyProject/"), ruleset)
     for v in report.violations:
         print(v.rule_id, v.message)
+
+``default_ruleset()`` holds the rules a plain run executes: the 119
+built-in rules minus the 32 opt-in ones. To work with the whole
+catalog, opt-in rules included, use ``full_ruleset()`` from
+``tmdl_preflight.rules`` instead.
 
 The same ``ruleset`` works with ``fix()`` if your rule also has a
 fixer (see :doc:`modify-the-auto-fixes`), and inside a pytest test:

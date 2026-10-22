@@ -59,6 +59,11 @@ useful for keeping CI read-only while developers repair locally:
     $ TMDL_PREFLIGHT_AUTOFIX=1 pytest tests/test_model_health.py
     $ pytest tests/test_model_health.py
 
+A model that is not ready yet can be listed in the configuration's
+``advisory`` section, and the plugin then reports a failure on it as an
+expected failure instead of a failure. A model that passes stays a
+pass, and a setup failure stays a failure.
+
 ``run()`` returns the report without failing the test, for custom
 assertions:
 
@@ -154,8 +159,8 @@ value.
 
     from tmdl_preflight import Rule
 
-The base class every rule, built-in or custom, subclasses. Four class
-attributes and one method make a rule:
+The base class every rule, built-in or custom, subclasses. A handful of
+class attributes and one method make a rule:
 
 .. list-table::
    :header-rows: 1
@@ -164,8 +169,8 @@ attributes and one method make a rule:
      - Meaning
    * - ``id``
      - A short unique code, for example ``"M003"``. Built-in ids use a
-       letter prefix by layer (M/D/R/F/B/S); pick a prefix outside
-       that set for a rule of your own.
+       letter prefix by layer (M/D/R/F/B/S, and A/C/L/N/O/P/X); pick a
+       prefix outside that set for a rule of your own.
    * - ``name``
      - A lowercase, hyphenated name, for example
        ``"lineage-duplicates"``. Accepted anywhere ``id`` is, in
@@ -190,6 +195,16 @@ attributes and one method make a rule:
      - ``True`` by default. ``False`` for defects that stop a model
        from opening or deploying; such violations are never written to
        a baseline (see :doc:`configuration`).
+   * - ``safe``
+     - ``True`` by default. Set ``False`` on a rule whose fixer changes
+       data or regenerates content: an unsafe fixer never runs in a
+       blanket ``fix``, only when its rule is selected explicitly. Four
+       rules ship it: D004, F016, P001 and R007.
+   * - ``opt_in``
+     - ``False`` by default. Set ``True`` on a rule that encodes one
+       team's conventions: it runs only when it is named, with
+       ``--select`` or in the configuration's ``select``. Thirty-two
+       rules ship it; see :doc:`rules`.
    * - ``option_defaults``
      - A dict of per-rule options and their defaults, for example
        ``{"min_length": 10}``. The configuration file may override
@@ -224,6 +239,12 @@ that a name matching nothing in the set simply drops out rather than
 raising (the CLI's own "unknown rule id" error is a check it performs
 itself, before calling ``select()``).
 
+When ``select`` is ``None`` -- that is, when no rule is named -- every
+``opt_in`` rule is dropped. A convention rule therefore never runs
+unless it is asked for by name. The same happens in the CLI, which is
+why the catalog marks the opt-in rules: a rule you have never heard of
+may or may not be running.
+
 ``default_ruleset()``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -233,10 +254,20 @@ itself, before calling ``select()``).
 
     ruleset = default_ruleset()
 
-Returns the full ``RuleSet`` of all thirty-seven built-in rules, in the
-order ``tmdl-preflight rules`` prints them. Narrow it with
+Returns the ``RuleSet`` a plain run executes: every one of the 119
+built-in rules **except** the 32 opt-in ones, in the order
+``tmdl-preflight rules`` prints them. Narrow it with
 ``RuleSet.select()``, above, or extend it by appending a rule of your
 own to ``ruleset.rules``.
+
+For the whole catalog, opt-in rules included, use ``full_ruleset()``:
+
+::
+
+    from tmdl_preflight.rules import ALL_RULES, full_ruleset
+
+    every_rule = full_ruleset()          # 119 rules
+    assert len(ALL_RULES) == 119
 
 ``check(ctx, ruleset)`` and ``fix(ctx, ruleset)``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -288,7 +319,9 @@ present there survived the repair attempt.
        relationships, DAX blocks, and so on).
    * - ``to_dict()``
      - The same structure the CLI's ``--json`` output serializes: a
-       ``summary``, the ``fixes`` list, the ``violations`` list, and
+       ``summary``, the ``fixes``, ``skipped``, ``skip_reasons``,
+       ``skipped_fixers``, ``would_fix``, ``refused_fixes``, ``notes``,
+       ``fix_notes`` and ``blocks`` lists, the ``violations`` list, and
        ``scanned``.
 
 ``Violation``
@@ -316,6 +349,42 @@ present there survived the repair attempt.
 ``.location()`` formats ``file`` and ``line`` as one string
 (``"path/to/file.tmdl:12"``), the same form the CLI prints.
 
+What the package exports
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``tmdl_preflight`` exports the names above, and these:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Name
+     - Meaning
+   * - ``ALL_RULES``
+     - The list of every registered rule class, opt-in ones included
+       (119).
+   * - ``full_ruleset()``
+     - A ``RuleSet`` of all 119 rules.
+   * - ``parse_model(path)``
+     - Parse one model folder into a ``SemanticModel``.
+   * - ``apply_policy(...)``
+     - The policy a configuration file applies to a run: the selection,
+       the excludes, the exemptions, the baseline.
+
+Two helper modules are part of the API as well, and the rules use them
+too:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Name
+     - Meaning
+   * - ``tmdl_preflight.measure_classes.classify_measure_name(name)``
+     - Classify a measure name: is it for report authors, or plumbing?
+       Returns the class and the helper subcategory.
+   * - ``tmdl_preflight.roles.fact_tables(model)``
+     - The shared table-role law: which tables are facts, dimensions,
+       selectors or measure tables.
+
 Design: the imposition pattern
 ------------------------------------
 
@@ -339,13 +408,15 @@ violation is still on the final report and the exit code is still
 nonzero. Auto-repair can therefore never mask a defect; the worst it
 can do is fail to remove one, exactly as if it did not exist.
 
-Only ten of the thirty-seven rules ship a fixer, and that is
-deliberate: a repair earns one only if the failure mode fully
-determines it, it never overwrites human-authored semantics, it is
-idempotent, and it is a minimal, line-level edit. Every fixer also
-proves its edit before writing it (``edits.verified_write``), so a
-repair that cannot be shown to change only what it claims is never
-written. The full contract,
+Twenty-five of the 119 rules ship a fixer, and that is deliberate: a
+repair earns one only if the failure mode fully determines it, it never
+overwrites human-authored semantics, it is idempotent, and it is a
+minimal, line-level edit. Four of the twenty-five are marked **unsafe**
+(D004, F016, P001 and R007): their repair changes data or regenerates
+content, so they never run in a blanket ``fix`` and only run when their
+rule is selected explicitly. Every fixer also proves its edit before
+writing it (``edits.verified_write``), so a repair that cannot be shown
+to change only what it claims is never written. The full contract,
 with the two rules that fail it on purpose, is in
 :doc:`../how-to/modify-the-auto-fixes`.
 
@@ -366,24 +437,35 @@ much infrastructure the check needs.
    * - Structural
      - Do the files even parse? Is identity metadata sound? Will
        Power BI open the project at all?
-     - M001-M015
+     - M001-M023
      - the files
    * - Expression
      - Is the DAX lexically sound, and are its references real?
-     - D001-D005
+     - D001-D012, X001
      - a parsed model
    * - Model integration
-     - Do cross-object structures cohere, relationships, field
-       parameters?
-     - R001-R007, F001-F004
+     - Do cross-object structures cohere: relationships, the calendar,
+       field parameters, the grain guards?
+     - R001-R016, F001-F017, C001-C012
      - a parsed model
    * - Report
-     - Does the report layer agree with itself?
-     - B001-B004
+     - Does the report layer agree with itself, and is it complete
+       enough for Fabric to import?
+     - B001-B008
      - the ``*.Report`` folder
+   * - Security
+     - Do the roles and their row filters do what they claim?
+     - L001-L006
+     - the ``*.SemanticModel`` folder
+   * - Governance
+     - Is the model following the conventions, and is its refresh
+       policy sound?
+     - S001-S005, O001-O015, N020, A001-A005, P001-P002
+     - a parsed model, and a configuration for the opt-in ones
    * - Advisory
      - Is the model following good practice?
-     - S001, S002 (and R004/R005 by severity)
+     - the ``info`` rules of every layer (S001, S002, R004, R005,
+       A002, L006, and the inventory rules)
      - a parsed model
 
 The ordering is diagnostic, not just taxonomic. A defect at one layer
@@ -394,7 +476,7 @@ a stray comma in a field-parameter source (F001) makes every
 violations at several layers, fix the lowest layer first and re-run;
 much of the rest usually evaporates.
 
-All five layers share one property: they run locally, against files,
+All these layers share one property: they run locally, against files,
 in seconds, with no credentials. That is the niche this tool occupies,
 the checks affordable on every save and required before every push.
 Deliberately out of scope, because they need a live service or a
@@ -402,7 +484,8 @@ human: deployment state (did the model actually load and refresh),
 data quality (did the pipeline fill the tables correctly), and visual
 rendering (does the report look right). Passing preflight means a
 model deserves the more expensive downstream verification; it does not
-replace it.
+replace it. The one command that does reach a service, ``live``, is
+opt-in and never runs by default.
 
 Severity encodes the layer's authority. Structural and expression
 defects fail hard (``error``) because they are facts: the import will
@@ -411,10 +494,18 @@ because they encode judgment, and judgment belongs to the modeler:
 three bidirectional relationships might be exactly right for a given
 model. ``warning`` sits in between, ``--strict`` promotes it to
 blocking, covering things that are almost always wrong but have
-legitimate exceptions. This is also why advisory rules never grow
-fixers: an auto-fix that "repaired" a bidirectional filter would be
-the tool overruling the modeler on a judgment call, exactly what the
-imposition pattern's safety contract forbids.
+legitimate exceptions.
+
+A judgment call does not earn a fixer, but a determined defect does,
+whatever layer it sits in. R004 ``relationship-bidirectional`` still has
+no fixer, because an auto-fix that "repaired" a bidirectional filter
+would be the tool overruling the modeler. The rules that do have
+fixers repair what the failure itself determines: a duplicated lineage
+tag (M003), an orphan comma (F001), a missing ``ref table`` line
+(M006), a hidden helper measure (O009), a ragged field-parameter row
+(F004). The four whose repair changes data or regenerates content
+(D004, F016, P001, R007) are marked unsafe and run only when their
+rule is named.
 
 Using the layers in practice: the inner loop while editing can run
 just ``--select M002,D001`` for parse and delimiter confidence in well
