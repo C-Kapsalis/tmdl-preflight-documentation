@@ -230,43 +230,35 @@ Run both of these; both must pass:
 
     $ tmdl-preflight check examples/bike-shop-clean
 
-    BikeShop.Report/definition/pages/pages.json  B005 error: definition/pages/pages.json is missing; the report has no pages metadata. Save the report again from Power BI Desktop (PBIR format). [BikeShop.Report]
-    BikeShop.Report/definition/report.json  B008 error: BikeShop.Report: definition/report.json is missing; Power BI Desktop cannot open a report folder without it.
-    BikeShop.Report/definition/version.json  B008 error: BikeShop.Report: definition/version.json is missing; Power BI Desktop cannot open a report folder without it.
     BikeShop.SemanticModel/definition/tables/Sales Measures.tmdl:26  M017 info: Line 26: Multiline DAX should use triple backticks
     BikeShop.SemanticModel/definition/tables/__Calendar.tmdl  R013 info: calendar __Calendar has no Year, Quarter, Month, Week, Day column(s). [__Calendar]
 
     scanned: 1 model, 6 tables, 22 columns, 6 measures, 4 relationships, 8 DAX expressions, 1 report
     (the run then prints its console report: the DAX validation summary
     and the R001, R002, R004, R005, R009, R010, R012, R013 and R014 blocks)
-    tmdl-preflight: 3 error(s), 0 warning(s), 2 info(s)
+    tmdl-preflight: 0 error(s), 0 warning(s), 2 info(s)
 
 The second command is the end-to-end smoke test. Its output is fixed:
 the shipped example is what it is, and the findings above are the ones
-it produces. The three errors all come from the report layer, not from
-the model: the example's ``BikeShop.Report`` folder is in the older
-PBIR layout (its ``report.json`` sits at the report root, and it has
-no ``definition/version.json`` and no ``definition/pages/pages.json``),
-and the B005 and B008 rules want the file set a report saved by Power
-BI Desktop has. The model itself is clean: the run reports nothing but
-two info findings (M017 and R013) against it. The command therefore
-exits ``1``, and a change to that output is a change to the smoke
-test.
+it produces. The model and the report are both clean — the report
+folder is in the PBIR layout a report saved by Power BI Desktop has —
+so the run reports nothing but two info findings (M017 and R013). The
+command exits ``0``, and a change to that output is a change to the
+smoke test.
 
 If you touched a fixer, also confirm ``tmdl-preflight fix`` on a copy
 of ``examples/bike-shop-broken`` repairs the four seeded defects and
-leaves the report-layer errors and the info findings behind:
+leaves the info findings behind:
 
 ::
 
     $ cp -r examples/bike-shop-broken /tmp/bike-shop
     $ tmdl-preflight fix /tmp/bike-shop
-    tmdl-preflight: 3 error(s), 0 warning(s), 3 info(s), 4 fix(es) applied
+    tmdl-preflight: 0 error(s), 0 warning(s), 3 info(s), 4 fix(es) applied
 
 That summary line is the whole verdict: four fixers ran, and the
-re-check still finds the three report-layer errors and three info
-findings. The exit code is ``1``: ``fix`` reports the state of the run
-rather than hiding it.
+re-check still finds three info findings. The exit code is ``0``:
+``fix`` reports the state of the run rather than hiding it.
 
 Commit and PR conventions
 ------------------------------
